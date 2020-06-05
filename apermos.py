@@ -29,8 +29,6 @@ import logging
 logging.basicConfig(level=logging.INFO)
 
 
-from atools import utils
-
 def fits_transfer_coordinates(fromfits, tofits, overwrite=True):
     """
     transfer RA and Dec from one fits to another
@@ -84,7 +82,7 @@ def fits_squeeze(ffile, out=None):
 
 def fits_operation(fitsfile, other, operation='-', out=None):
     """
-    perform operation on fits file and other fits/array/number, 
+    perform operation on fits file and other fits/array/number,
     keeping header of the original FITS one
     """
     if out is None:
@@ -158,14 +156,14 @@ def get_common_psf(fitsfiles):
 def main(images, pbimages, pbclip=0.1):
 
     common_psf = get_common_psf(images)
-    
+
     corrimages = [] # to mosaic
     pbweights = [] # of the pixels
     rmsweights = [] # of the images themself
     # weight_images = []
     for img, pb in zip(images, pbimages):
         logging.info('MOSAIC:\n  Image: %s\n  PBeam: %s', img, pb)
-# prepare the images (squeeze, transfer_coordinates, reproject, regrid pbeam, correct...)        
+# prepare the images (squeeze, transfer_coordinates, reproject, regrid pbeam, correct...)
         img = fits_squeeze(img) # remove extra dimentions
         pb = fits_transfer_coordinates(img, pb) # transfer_coordinates
         pb = fits_squeeze(pb) # remove extra dimentions
@@ -175,8 +173,8 @@ def main(images, pbimages, pbclip=0.1):
         with fits.open(pb) as f:
             pbheader = f[0].header
             pbdata = f[0].data
-# reproject            
-            reproj_arr, reproj_footprint = reproject_interp(f[0], imheader) 
+# reproject
+            reproj_arr, reproj_footprint = reproject_interp(f[0], imheader)
         reproj_arr = np.float32(reproj_arr)
         reproj_arr[reproj_arr < pbclip] = np.nan
         pb_regr_repr = pb.replace('.fits', '_repr.fits')
@@ -195,7 +193,7 @@ def main(images, pbimages, pbclip=0.1):
         pbcorr_image = fits_operation(reconvolved_image, reproj_arr, operation='/', out=pbcorr_image)
         corrimages.append(pbcorr_image)
 
-# weight the images by RMS noise over the edges 
+# weight the images by RMS noise over the edges
         l, m = imdata.shape[0]//10,  imdata.shape[1]//10
         mask = np.ones(imdata.shape, dtype=np.bool)
         mask[l:-l,m:-m] = False
@@ -205,25 +203,25 @@ def main(images, pbimages, pbclip=0.1):
 
 # merge the image rms weights and the primary beam pixel weights:
     weights = [p*r/max(rmsweights) for p, r in zip(pbweights, rmsweights)]
-    
+
 # create the wcs and footprint for output mosaic
     wcs_out, shape_out = find_optimal_celestial_wcs(images, frame=None, auto_rotate=False, reference=None)
-        
+
 
     array, footprint = reproject_and_coadd(images, wcs_out, shape_out=shape_out,
                                             reproject_function=reproject_interp,
                                             input_weights=weights)
-    
+
     array = np.float32(array)
 # insert common PSF into the header
-    psf = common_psf.to_header_keywords() 
+    psf = common_psf.to_header_keywords()
     hdr = wcs_out.to_header()
     hdr.insert('RADESYS', ('FREQ', 1.4E9))
     hdr.insert('RADESYS', ('BMAJ', psf['BMAJ']))
     hdr.insert('RADESYS', ('BMIN', psf['BMIN']))
     hdr.insert('RADESYS', ('BPA', psf['BPA']))
 
-    fits.writeto('mosaic.fits', data=array, 
+    fits.writeto('mosaic.fits', data=array,
                  header=hdr, overwrite=True)
 
 
@@ -238,4 +236,4 @@ if __name__ == "__main__":
     extime = Time.now() - t0
     print("Execution time: {:.1f} min".format(extime.to("minute").value))
 
-    
+
