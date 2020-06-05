@@ -229,7 +229,7 @@ def main(images, pbimages, pbclip=0.1):
 
 
 if __name__ == "__main__":
-
+    print("MOSAIC tool")
     # t0 = Time.now()
     # main([],[], pbclip=0.1)
     # extime = Time.now() - t0
