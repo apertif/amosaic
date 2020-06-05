@@ -157,13 +157,13 @@ def get_common_psf(fitsfiles):
 
 def main(images, pbimages, pbclip=0.1):
 
-    common_psf = get_common_psf(ffiles)
+    common_psf = get_common_psf(images)
     
     images = [] # to mosaic
     pbweights = [] # of the pixels
     rmsweights = [] # of the images themself
     # weight_images = []
-    for img, pb in zip(ffiles, pbeams):
+    for img, pb in zip(images, pbimages):
         logging.info('MOSAIC:\n  Image: %s\n  PBeam: %s', img, pb)
 # prepare the images (squeeze, transfer_coordinates, reproject, regrid pbeam, correct...)        
         img = fits_squeeze(img) # remove extra dimentions
@@ -215,7 +215,6 @@ def main(images, pbimages, pbclip=0.1):
                                             input_weights=weights)
     
     array = np.float32(array)
-    array_bg = np.float32(array_bg)
 # insert common PSF into the header
     psf = common_psf.to_header_keywords() 
     hdr = wcs_out.to_header()
@@ -230,9 +229,11 @@ def main(images, pbimages, pbclip=0.1):
 
 if __name__ == "__main__":
     print("MOSAIC tool")
-    # t0 = Time.now()
-    # main([],[], pbclip=0.1)
-    # extime = Time.now() - t0
-    # print("Execution time: {:.1f} min".format(extime.to("minute").value))
+    images = sorted(glob.glob('[1-2][0,9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]_[0-3][0-9].fits'))
+    pbimages = sorted(glob.glob('[1-2][0,9][0-9][0-9][0-9][0-9]_[0-3][0-9]_I_model.fits'))
+    t0 = Time.now()
+    main(images, pbimages, pbclip=0.1)
+    extime = Time.now() - t0
+    print("Execution time: {:.1f} min".format(extime.to("minute").value))
 
     
