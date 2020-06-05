@@ -159,7 +159,7 @@ def main(images, pbimages, pbclip=0.1):
 
     common_psf = get_common_psf(images)
     
-    images = [] # to mosaic
+    corrimages = [] # to mosaic
     pbweights = [] # of the pixels
     rmsweights = [] # of the images themself
     # weight_images = []
@@ -193,7 +193,7 @@ def main(images, pbimages, pbclip=0.1):
 # PB correction
         pbcorr_image = reconvolved_image.replace('.fits', '_pbcorr.fits')
         pbcorr_image = fits_operation(reconvolved_image, reproj_arr, operation='/', out=pbcorr_image)
-        images.append(pbcorr_image)
+        corrimages.append(pbcorr_image)
 
 # weight the images by RMS noise over the edges 
         l, m = imdata.shape[0]//10,  imdata.shape[1]//10
@@ -231,6 +231,8 @@ if __name__ == "__main__":
     print("MOSAIC tool")
     images = sorted(glob.glob('[1-2][0,9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]_[0-3][0-9].fits'))
     pbimages = sorted(glob.glob('[1-2][0,9][0-9][0-9][0-9][0-9]_[0-3][0-9]_I_model.fits'))
+    print(images)
+    print(pbimages)
     t0 = Time.now()
     main(images, pbimages, pbclip=0.1)
     extime = Time.now() - t0
