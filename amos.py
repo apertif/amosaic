@@ -301,11 +301,8 @@ if __name__ == "__main__":
         images = sorted(glob.glob('{}/[1-2][0,9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]_[0-3][0-9].fits'.format(glb)))
         pbimages = sorted(glob.glob('{}/[1-2][0,9][0-9][0-9][0-9][0-9]_[0-3][0-9]_I_model.fits'.format(glb)))
 
-    print(args)
-    print(images)
-    sys.exit()
     t0 = Time.now()
-    main(images, pbimages, pbclip=0.1)
+    main(images, pbimages, pbclip=pbclip)
     extime = Time.now() - t0
     print("Execution time: {:.1f} min".format(extime.to("minute").value))
 
