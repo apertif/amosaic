@@ -287,7 +287,7 @@ if __name__ == "__main__":
     parser.add_argument('-g', '--glob', default='', help='Use glob on the directory. DANGEROUS')
     parser.add_argument('-i', '--images', nargs='+')
     parser.add_argument('-b', '--pbeams', nargs='+')
-    parser.add_argument('-c', '--clip', nargs='?', default=0.1, help='Pbeam clip')
+    parser.add_argument('-c', '--clip', type=float, nargs='?', default=0.1, help='Pbeam clip')
 
     args = parser.parse_args()
 
