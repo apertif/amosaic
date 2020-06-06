@@ -1,2 +1,3 @@
-# apermos
-Mosaicing of radio beams
+# Amosaic
+Mosaicing of radio images corrected and weighted by primary beam images
+
