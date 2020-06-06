@@ -64,7 +64,7 @@ def fits_squeeze(fitsfile, out=None):
     remove extra dimentions from data and modify header
     """
     if out is None:
-        logging.warning('fits_squeeze: Overwriting file %', fitsfile)
+        logging.warning('fits_squeeze: Overwriting file %s', fitsfile)
         out = fitsfile
 
     with fits.open(fitsfile) as hdul:
@@ -93,7 +93,7 @@ def fits_operation(fitsfile, other, operation='-', out=None):
     keeping header of the original FITS one
     """
     if out is None:
-        logging.warning('fits_operation: Overwriting file %', fitsfile)
+        logging.warning('fits_operation: Overwriting file %s', fitsfile)
         out = fitsfile
 
     if isinstance(other, str):
@@ -122,7 +122,7 @@ def fits_reconvolve_psf(fitsfile, newpsf, out=None):
     """ Convolve image with deconvolution of (newpsf, oldpsf) """
     newparams = newpsf.to_header_keywords()
     if out is None:
-        logging.warning('fits_reconvolve: Overwriting file %', fitsfile)
+        logging.warning('fits_reconvolve: Overwriting file %s', fitsfile)
         out = fitsfile
     with fits.open(fitsfile) as hdul:
         hdr = hdul[0].header
@@ -174,7 +174,7 @@ def crop_image(img):
 def fits_crop(fitsfile, out=None):
     # Load the image and the WCS
     if out is None:
-        logging.warning('fits_crop: Overwriting file %', fitsfile)
+        logging.warning('fits_crop: Overwriting file %s', fitsfile)
         out = fitsfile
     with fits.open(fitsfile) as f:
         hdu = f[0]
