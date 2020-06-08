@@ -202,7 +202,7 @@ def fits_crop(fitsfile, out=None):
     return out, cutout
 
 
-def main(images, pbimages, pbclip=0.1):
+def main(images, pbimages, reference=None, pbclip=0.1):
 
     common_psf = get_common_psf(images)
 
@@ -221,9 +221,6 @@ def main(images, pbimages, pbclip=0.1):
         with fits.open(tmpimg) as f:
             imheader = f[0].header
             imdata = f[0].data
-        with fits.open(tmppb) as f:
-            pbheader = f[0].header
-            pbdata = f[0].data
 # reproject
             reproj_arr, reproj_footprint = reproject_interp(f[0], imheader)
         reproj_arr = np.float32(reproj_arr)
@@ -260,7 +257,7 @@ def main(images, pbimages, pbclip=0.1):
     weights = [p*r/max(rmsweights) for p, r in zip(pbweights, rmsweights)]
 
 # create the wcs and footprint for output mosaic
-    wcs_out, shape_out = find_optimal_celestial_wcs(corrimages, auto_rotate=False, reference=None)
+    wcs_out, shape_out = find_optimal_celestial_wcs(corrimages, auto_rotate=False, reference=reference)
 
     array, footprint = reproject_and_coadd(corrimages, wcs_out, shape_out=shape_out,
                                             reproject_function=reproject_interp,
@@ -287,6 +284,7 @@ if __name__ == "__main__":
     parser.add_argument('-g', '--glob', default='', help='Use glob on the directory. DANGEROUS')
     parser.add_argument('-i', '--images', nargs='+')
     parser.add_argument('-b', '--pbeams', nargs='+')
+    parser.add_argument('-r', '--reference', help='Reference RA,Dec (ex. "14h02m43,53d47m10s")')
     parser.add_argument('-c', '--clip', type=float, nargs='?', default=0.1, help='Pbeam clip')
 
     args = parser.parse_args()
@@ -295,6 +293,11 @@ if __name__ == "__main__":
     pbimages = args.pbeams
     pbclip = args.clip
     glb = args.glob
+    if args.reference:
+        ra, dec = args.reference.split(',')
+        ref = SkyCoord(ra, dec)
+    else:
+        ref = None
 
     if glb:
         logging.warning('--glob key is set. looking for files in %s', glb)
@@ -302,7 +305,7 @@ if __name__ == "__main__":
         pbimages = sorted(glob.glob('{}/[1-2][0,9][0-9][0-9][0-9][0-9]_[0-3][0-9]_I_model.fits'.format(glb)))
 
     t0 = Time.now()
-    main(images, pbimages, pbclip=pbclip)
+    main(images, pbimages, reference=ref, pbclip=pbclip)
     extime = Time.now() - t0
     print("Execution time: {:.1f} min".format(extime.to("minute").value))
 
