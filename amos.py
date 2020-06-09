@@ -33,6 +33,9 @@ import logging
 logging.basicConfig(level=logging.INFO)
 
 
+def clean_mosaic_tmp_data(path='.'):
+    cmd = 'cd {path} && rm *_tmp.fits *_repr.fits *_reconv.fits *_pbcorr.fits casa*.log'.format(path=path)
+    subprocess.call(cmd, shell=True)
 
 
 def make_tmp_copy(fname):
@@ -202,7 +205,7 @@ def fits_crop(fitsfile, out=None):
     return out, cutout
 
 
-def main(images, pbimages, reference=None, pbclip=0.1):
+def main(images, pbimages, reference=None, pbclip=None):
 
     common_psf = get_common_psf(images)
 
@@ -221,8 +224,14 @@ def main(images, pbimages, reference=None, pbclip=0.1):
         with fits.open(tmpimg) as f:
             imheader = f[0].header
             imdata = f[0].data
+        with fits.open(tmppb) as f:
+            pbhdu = f[0]
+            autoclip = np.nanmin(f[0].data)
 # reproject
-            reproj_arr, reproj_footprint = reproject_interp(f[0], imheader)
+            reproj_arr, reproj_footprint = reproject_interp(pbhdu, imheader)
+
+        pbclip = pbclip or autoclip
+        logging.info('PB is clipped at %f level', pbclip)
         reproj_arr = np.float32(reproj_arr)
         reproj_arr[reproj_arr < pbclip] = np.nan
         pb_regr_repr = os.path.basename(tmppb.replace('.fits', '_repr.fits'))
@@ -234,7 +243,7 @@ def main(images, pbimages, reference=None, pbclip=0.1):
         pbcorr_image = os.path.basename(reconvolved_image.replace('.fits', '_pbcorr.fits'))
         pbcorr_image = fits_operation(reconvolved_image, reproj_arr, operation='/', out=pbcorr_image)
 # cropping
-        cropped_image = os.path.basename(pbcorr_image.replace('.fits', '_cropped.fits'))
+        cropped_image = os.path.basename(img.replace('.fits', '_mos.fits'))
         cropped_image, cutout = fits_crop(pbcorr_image, out=cropped_image)
         corrimages.append(cropped_image)
 
@@ -277,6 +286,8 @@ def main(images, pbimages, reference=None, pbclip=0.1):
     fits.writeto('mosaic.fits', data=array,
                  header=hdr, overwrite=True)
 
+    clean_mosaic_tmp_data()
+
 
 if __name__ == "__main__":
     print("MOSAIC tool")
@@ -285,7 +296,7 @@ if __name__ == "__main__":
     parser.add_argument('-i', '--images', nargs='+')
     parser.add_argument('-b', '--pbeams', nargs='+')
     parser.add_argument('-r', '--reference', help='Reference RA,Dec (ex. "14h02m43,53d47m10s")')
-    parser.add_argument('-c', '--clip', type=float, nargs='?', default=0.1, help='Pbeam clip')
+    parser.add_argument('-c', '--clip', type=float, nargs='?', default=None, help='Pbeam clip')
 
     args = parser.parse_args()
 
