@@ -30,7 +30,7 @@ from reproject import reproject_interp
 from reproject.mosaicking import reproject_and_coadd, find_optimal_celestial_wcs
 
 import logging
-logging.basicConfig(level=logging.INFO)
+
 
 
 def clean_mosaic_tmp_data(path='.'):
@@ -130,8 +130,8 @@ def fits_reconvolve_psf(fitsfile, newpsf, out=None):
     with fits.open(fitsfile) as hdul:
         hdr = hdul[0].header
         currentpsf = Beam.from_fits_header(hdr)
-        print(currentpsf)
-        print(newpsf)
+        # print(currentpsf)
+        # print(newpsf)
         if currentpsf != newpsf:
             kern = newpsf.deconvolve(currentpsf).as_kernel(pixscale=hdr['CDELT2']*u.deg)
             hdr.set('BMAJ', newparams['BMAJ'])
@@ -154,7 +154,6 @@ def get_common_psf(fitsfiles):
         bmines.append(ih['BMIN'])
         bpas.append(ih['BPA'])
         beam = Beam.from_fits_header(ih)
-        print(f, beam)
         beams.append(beam)
     beams = Beams(bmajes * u.deg, bmines * u.deg, bpas * u.deg)
     common = beams.common_beam()
@@ -205,8 +204,9 @@ def fits_crop(fitsfile, out=None):
     return out, cutout
 
 
-def main(images, pbimages, reference=None, pbclip=None):
-
+def main(images, pbimages, reference=None, pbclip=None, output='mosaic.fits', logger=None):
+    if logger is None:
+        logger = logging.getLogger('amos')
     common_psf = get_common_psf(images)
 
     corrimages = [] # to mosaic
@@ -214,7 +214,7 @@ def main(images, pbimages, reference=None, pbclip=None):
     rmsweights = [] # of the images themself
     # weight_images = []
     for img, pb in zip(images, pbimages):
-        logging.info('MOSAIC:\n  Image: %s\n  PBeam: %s', img, pb)
+        logger.info('\n  Image: %s\n  PBeam: %s', img, pb)
 # prepare the images (squeeze, transfer_coordinates, reproject, regrid pbeam, correct...)
         tmpimg = make_tmp_copy(img)
         tmppb = make_tmp_copy(pb)
@@ -231,7 +231,7 @@ def main(images, pbimages, reference=None, pbclip=None):
             reproj_arr, reproj_footprint = reproject_interp(pbhdu, imheader)
 
         pbclip = pbclip or autoclip
-        logging.info('PB is clipped at %f level', pbclip)
+        logger.info('PB is clipped at %f level', pbclip)
         reproj_arr = np.float32(reproj_arr)
         reproj_arr[reproj_arr < pbclip] = np.nan
         pb_regr_repr = os.path.basename(tmppb.replace('.fits', '_repr.fits'))
@@ -283,13 +283,15 @@ def main(images, pbimages, reference=None, pbclip=None):
     hdr.insert('RADESYS', ('BMIN', psf['BMIN']))
     hdr.insert('RADESYS', ('BPA', psf['BPA']))
 
-    fits.writeto('mosaic.fits', data=array,
+    fits.writeto(output, data=array,
                  header=hdr, overwrite=True)
-
-    clean_mosaic_tmp_data()
+    logging.info('Wrote %s', output)
+    logging.debug('Cleaning directory')
+    clean_mosaic_tmp_data('.')
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
     print("MOSAIC tool")
     parser = argparse.ArgumentParser(description='Mosaic fits images with primary beam correction and weighting')
     parser.add_argument('-g', '--glob', default='', help='Use glob on the directory. DANGEROUS')
@@ -297,6 +299,7 @@ if __name__ == "__main__":
     parser.add_argument('-b', '--pbeams', nargs='+')
     parser.add_argument('-r', '--reference', help='Reference RA,Dec (ex. "14h02m43,53d47m10s")')
     parser.add_argument('-c', '--clip', type=float, nargs='?', default=None, help='Pbeam clip')
+    parser.add_argument('-o', '--output', nargs='?', default='mosaic.fits', help='Output_file_name')
 
     args = parser.parse_args()
 
