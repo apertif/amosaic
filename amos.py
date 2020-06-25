@@ -57,7 +57,7 @@ def fits_transfer_coordinates(fromfits, tofits):
     with fits.open(tofits, mode='update') as hdul:
         hdul[0].header['CRVAL1'] = crval1
         hdul[0].header['CRVAL2'] = crval2
-        logging.warning('fits_transfer_coordinates: Udating fits header (CRVAL1/2) in %s', tofits)
+        logging.debug('fits_transfer_coordinates: Udating fits header (CRVAL1/2) in %s', tofits)
         hdul.flush()
     return tofits
 
@@ -67,7 +67,7 @@ def fits_squeeze(fitsfile, out=None):
     remove extra dimentions from data and modify header
     """
     if out is None:
-        logging.warning('fits_squeeze: Overwriting file %s', fitsfile)
+        logging.debug('fits_squeeze: Overwriting file %s', fitsfile)
         out = fitsfile
 
     with fits.open(fitsfile) as hdul:
@@ -96,7 +96,7 @@ def fits_operation(fitsfile, other, operation='-', out=None):
     keeping header of the original FITS one
     """
     if out is None:
-        logging.warning('fits_operation: Overwriting file %s', fitsfile)
+        logging.debug('fits_operation: Overwriting file %s', fitsfile)
         out = fitsfile
 
     if isinstance(other, str):
@@ -125,7 +125,7 @@ def fits_reconvolve_psf(fitsfile, newpsf, out=None):
     """ Convolve image with deconvolution of (newpsf, oldpsf) """
     newparams = newpsf.to_header_keywords()
     if out is None:
-        logging.warning('fits_reconvolve: Overwriting file %s', fitsfile)
+        logging.debug('fits_reconvolve: Overwriting file %s', fitsfile)
         out = fitsfile
     with fits.open(fitsfile) as hdul:
         hdr = hdul[0].header
@@ -159,7 +159,8 @@ def get_common_psf(fitsfiles):
     beams = Beams(bmajes * u.deg, bmines * u.deg, bpas * u.deg)
     common = beams.common_beam()
     smallest = beams.smallest_beam()
-    logging.info('PSF:\n  Smallest PSF: %s\n  Common PSF: %s', smallest, common)
+    logging.info('Smallest PSF: %s', smallest)
+    logging.info('Common PSF: %s', common)
     return common
 
 
@@ -177,7 +178,7 @@ def crop_image(img):
 def fits_crop(fitsfile, out=None):
     # Load the image and the WCS
     if out is None:
-        logging.warning('fits_crop: Overwriting file %s', fitsfile)
+        logging.debug('fits_crop: Overwriting file %s', fitsfile)
         out = fitsfile
     with fits.open(fitsfile) as f:
         hdu = f[0]
@@ -205,7 +206,32 @@ def fits_crop(fitsfile, out=None):
     return out, cutout
 
 
-def main(images, pbimages, reference=None, pbclip=None, output='mosaic.fits', logger=None):
+def pbcorrect(image, pbimage, pbclip=None, out=None):
+    tmpimg = make_tmp_copy(image)
+    tmppb = make_tmp_copy(pbimage)
+    tmpimg = fits_squeeze(tmpimg) # remove extra dimentions
+    tmppb = fits_transfer_coordinates(tmpimg, tmppb) # transfer_coordinates
+    tmppb = fits_squeeze(tmppb) # remove extra dimentions
+    with fits.open(tmpimg) as f:
+        imheader = f[0].header
+    with fits.open(tmppb) as f:
+        pbhdu = f[0]
+        autoclip = np.nanmin(f[0].data)
+# reproject
+        reproj_arr, reproj_footprint = reproject_interp(pbhdu, imheader)
+    pbclip = pbclip or autoclip
+    reproj_arr = np.float32(reproj_arr)
+    reproj_arr[reproj_arr < pbclip] = np.nan
+    logging.info('PB is clipped at %f level', pbclip)
+    pb_regr_repr = os.path.basename(tmppb.replace('.fits', '_repr.fits'))
+    fits.writeto(pb_regr_repr, reproj_arr, imheader, overwrite=True)
+    if out is None:
+        out = os.path.basename(image.replace('.fits', '_pbcorr.fits'))
+    out = fits_operation(tmpimg, reproj_arr, operation='/', out=out)
+    return out, reproj_arr
+
+
+def main(images, pbimages, reference=None, pbclip=0.1, output='mosaic.fits', logger=None):
     if logger is None:
         logger = logging.getLogger('amos')
     common_psf = get_common_psf(images)
@@ -215,47 +241,27 @@ def main(images, pbimages, reference=None, pbclip=None, output='mosaic.fits', lo
     rmsweights = [] # of the images themself
     # weight_images = []
     for img, pb in zip(images, pbimages):
-        logger.info('\n  Image: %s\n  PBeam: %s', img, pb)
+        logger.info('Image: %s', img)
+        logger.info('PBeam: %s', pb)
 # prepare the images (squeeze, transfer_coordinates, reproject, regrid pbeam, correct...)
-        tmpimg = make_tmp_copy(img)
-        tmppb = make_tmp_copy(pb)
-        tmpimg = fits_squeeze(tmpimg) # remove extra dimentions
-        tmppb = fits_transfer_coordinates(tmpimg, tmppb) # transfer_coordinates
-        tmppb = fits_squeeze(tmppb) # remove extra dimentions
-        with fits.open(tmpimg) as f:
-            imheader = f[0].header
-            imdata = f[0].data
-        with fits.open(tmppb) as f:
-            pbhdu = f[0]
-            autoclip = np.nanmin(f[0].data)
-# reproject
-            reproj_arr, reproj_footprint = reproject_interp(pbhdu, imheader)
-
-        pbclip = pbclip or autoclip
-        logger.info('PB is clipped at %f level', pbclip)
-        reproj_arr = np.float32(reproj_arr)
-        reproj_arr[reproj_arr < pbclip] = np.nan
-        pb_regr_repr = os.path.basename(tmppb.replace('.fits', '_repr.fits'))
-        fits.writeto(pb_regr_repr, reproj_arr, imheader, overwrite=True)
-# convolution with common psf
-        reconvolved_image = os.path.basename(tmpimg.replace('.fits', '_reconv.fits'))
-        reconvolved_image = fits_reconvolve_psf(tmpimg, common_psf, out=reconvolved_image)
 # PB correction
-        pbcorr_image = os.path.basename(reconvolved_image.replace('.fits', '_pbcorr.fits'))
-        pbcorr_image = fits_operation(reconvolved_image, reproj_arr, operation='/', out=pbcorr_image)
+        pbcorr_image = os.path.basename(img.replace('.fits', '_pbcorr.fits'))
+        pbcorr_image, pbarray = pbcorrect(img, pb, pbclip=pbclip, out=pbcorr_image)
+# convolution with common psf
+        reconvolved_image = os.path.basename(pbcorr_image.replace('.fits', '_reconv.fits'))
+        reconvolved_image = fits_reconvolve_psf(pbcorr_image, common_psf, out=reconvolved_image)
 # cropping
         cropped_image = os.path.basename(img.replace('.fits', '_mos.fits'))
         cropped_image, cutout = fits_crop(pbcorr_image, out=cropped_image)
         corrimages.append(cropped_image)
-
 # primary beam weights
-        wg_arr = reproj_arr - pbclip # the edges weight ~0
+        wg_arr = pbarray - pbclip # the edges weight ~0
         wg_arr[np.isnan(wg_arr)] = 0 # the NaNs weight 0
         wg_arr = wg_arr / np.nanmax(wg_arr) # normalize
         wcut = Cutout2D(wg_arr, cutout.input_position_original, cutout.shape)
         pbweights.append(wcut.data)
-
 # weight the images by RMS noise over the edges
+        imdata = np.squeeze(fits.getdata(img))
         l, m = imdata.shape[0]//10,  imdata.shape[1]//10
         mask = np.ones(imdata.shape, dtype=np.bool)
         mask[l:-l,m:-m] = False
