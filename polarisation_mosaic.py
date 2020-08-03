@@ -365,4 +365,4 @@ class polarisation_mosaic:
                 qcube_hdr = qcube.header
                 coord_arr[b,1] = qcube_hdr['CRVAL1']
                 coord_arr[b,2] = qcube_hdr['CRVAL2']
-        np.savetxt(self.polmosaicdir + '/pointings.txt', coord_arr, fmt=['%2.0s','%1.13e','%1.13e'], delimiter='\t')
+        np.savetxt(self.polmosaicdir + '/pointings.txt', coord_arr, fmt=['%2s','%1.13e','%1.13e'], delimiter='\t')
