@@ -333,6 +333,11 @@ class polarisation_mosaic:
             qhdu_hdr = qhdu.header
             freqs.append(qhdu_hdr['FREQ'])
             qdata[q,:,:] = qhdu_data
+        qhdu_hdr.insert('NAXIS2', ('NAXIS3', len(qfinimages)), after=True)
+        qhdu_hdr.insert('CTYPE2', ('CRPIX3', 1.0), after=True)
+        qhdu_hdr.insert('CRPIX3', ('CDELT3', 6250000.0), after=True)
+        qhdu_hdr.insert('CDELT3', ('CRVAL3', freqs[0]), after=True)
+        qhdu_hdr.insert('CRVAL3', ('CTYPE3', 'FREQ-OBS'), after=True)
         pyfits.writeto(self.polmosaicdir + '/Qcube.fits', np.float32(qdata), qhdu_hdr, overwrite=True)
         # Write the frequency file
         with open(self.polmosaicdir + '/freq.txt', 'w') as f:
@@ -344,6 +349,11 @@ class polarisation_mosaic:
             uhdu_data = uhdu.data
             uhdu_hdr = uhdu.header
             udata[u,:,:] = uhdu_data
+        uhdu_hdr.insert('NAXIS2', ('NAXIS3', len(ufinimages)), after=True)
+        uhdu_hdr.insert('CTYPE2', ('CRPIX3', 1.0), after=True)
+        uhdu_hdr.insert('CRPIX3', ('CDELT3', 6250000.0), after=True)
+        uhdu_hdr.insert('CDELT3', ('CRVAL3', freqs[0]), after=True)
+        uhdu_hdr.insert('CRVAL3', ('CTYPE3', 'FREQ-OBS'), after=True)
         pyfits.writeto(self.polmosaicdir + '/Ucube.fits', np.float32(udata), uhdu_hdr, overwrite=True)
 
         # Write a file with the central coordinates of each pointing used
