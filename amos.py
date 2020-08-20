@@ -125,19 +125,20 @@ def fits_reconvolve_psf(fitsfile, newpsf, out=None):
     """ Convolve image with deconvolution of (newpsf, oldpsf) """
     newparams = newpsf.to_header_keywords()
     if out is None:
-        logging.warning('fits_reconvolve: Overwriting file %s', fitsfile)
+        logging.debug('fits_reconvolve: Overwriting file %s', fitsfile)
         out = fitsfile
     with fits.open(fitsfile) as hdul:
         hdr = hdul[0].header
         currentpsf = Beam.from_fits_header(hdr)
-        print(currentpsf)
-        print(newpsf)
         if currentpsf != newpsf:
             kern = newpsf.deconvolve(currentpsf).as_kernel(pixscale=hdr['CDELT2']*u.deg)
-            hdr.set('BMAJ', newparams['BMAJ'])
-            hdr.set('BMIN', newparams['BMIN'])
-            hdr.set('BPA', newparams['BPA'])
-            hdul[0].data = convolve(hdul[0].data, kern)
+            norm = newpsf.to_value() / currentpsf.to_value()
+            if len(hdul[0].data.shape) == 4:
+                print(kern)
+                hdul[0].data[0,0,...] = norm * convolve(hdul[0].data[0,0,...], kern)
+            else:
+                hdul[0].data = norm * convolve(hdul[0].data, kern)
+            hdr = newpsf.attach_to_header(hdr)
         fits.writeto(out, data=hdul[0].data, header=hdr, overwrite=True)
     return out
 
