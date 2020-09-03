@@ -7,7 +7,7 @@ from reproject import reproject_interp
 from reproject.mosaicking import reproject_and_coadd, find_optimal_celestial_wcs
 
 import fits_magic as fm
-import util
+import utils
 import glob
 import sys
 
@@ -20,8 +20,8 @@ class polarisation_mosaic:
 
 
     def __init__(self, file_=None, **kwargs):
-        self.default = util.load_config(self, file_)
-        util.set_mosdirs(self)
+        self.default = utils.load_config(self, file_)
+        utils.set_mosdirs(self)
         self.config_file_name = file_
 
 
@@ -30,13 +30,13 @@ class polarisation_mosaic:
         Function to generate the polarisation mosaics
         """
         veri = self.verify_pol()
-        cbeam = util.get_common_psf(self, veri, format = 'array')
-        util.gen_poldirs(self)
+        cbeam = utils.get_common_psf(self, veri, format ='array')
+        utils.gen_poldirs(self)
         for sb in range(24):
             try:
-                util.copy_polimages(self, sb, veri)
-                util.copy_polbeams(self)
-                qimages, uimages, pbimages = util.get_polfiles(self)
+                utils.copy_polimages(self, sb, veri)
+                utils.copy_polbeams(self)
+                qimages, uimages, pbimages = utils.get_polfiles(self)
                 self.make_polmosaic(qimages, uimages, pbimages, sb, cbeam)
             except:
                 continue
@@ -47,7 +47,7 @@ class polarisation_mosaic:
         """
         Function to verify the polarisation images and generate a matrix of usable images and planes
         """
-        util.collect_paramfiles(self)
+        utils.collect_paramfiles(self)
         verification_array = self.check_polimages()
         return verification_array
 
@@ -63,10 +63,10 @@ class polarisation_mosaic:
         bpa_array = np.full((40, 24, 2), np.nan)
         for beam in range(0, 40, 1):
             try:
-                rms_array[beam, :] = util.get_param(self, 'polarisation_B' + str(beam).zfill(2) + '_targetbeams_qu_imagestats')[:, 2, :]
-                bmaj_array[beam, :] = util.get_param(self, 'polarisation_B' + str(beam).zfill(2) + '_targetbeams_qu_beamparams')[:, 0, :]
-                bmin_array[beam, :] = util.get_param(self, 'polarisation_B' + str(beam).zfill(2) + '_targetbeams_qu_beamparams')[:, 1, :]
-                bpa_array[beam, :] = util.get_param(self, 'polarisation_B' + str(beam).zfill(2) + '_targetbeams_qu_beamparams')[:, 2, :]
+                rms_array[beam, :] = utils.get_param(self, 'polarisation_B' + str(beam).zfill(2) + '_targetbeams_qu_imagestats')[:, 2, :]
+                bmaj_array[beam, :] = utils.get_param(self, 'polarisation_B' + str(beam).zfill(2) + '_targetbeams_qu_beamparams')[:, 0, :]
+                bmin_array[beam, :] = utils.get_param(self, 'polarisation_B' + str(beam).zfill(2) + '_targetbeams_qu_beamparams')[:, 1, :]
+                bpa_array[beam, :] = utils.get_param(self, 'polarisation_B' + str(beam).zfill(2) + '_targetbeams_qu_beamparams')[:, 2, :]
             except KeyError:
                 continue
         # Create an array for the accepted beams
@@ -113,7 +113,7 @@ class polarisation_mosaic:
         """
 
         # Set the directories for the mosaicking
-        util.set_mosdirs(self)
+        utils.set_mosdirs(self)
         # Get the common psf
         common_psf = psf
 
@@ -244,7 +244,7 @@ class polarisation_mosaic:
         pyfits.writeto(self.polmosaicdir + '/' + str(utg).upper() + '_' + str(sb).zfill(2) + '_U.fits', data=uarray,
                      header=uhdr, overwrite=True)
 
-        util.clean_polmosaic_tmp_data(self)
+        utils.clean_polmosaic_tmp_data(self)
 
 
     def make_polcubes(self):
@@ -253,7 +253,7 @@ class polarisation_mosaic:
         """
 
         # Set the directories for the mosaicking
-        util.set_mosdirs(self)
+        utils.set_mosdirs(self)
 
         # Get the fits files
         Qmoss = sorted(glob.glob(self.polmosaicdir + '/*_Q.fits'))

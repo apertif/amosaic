@@ -7,7 +7,7 @@ from reproject import reproject_interp
 from reproject.mosaicking import reproject_and_coadd, find_optimal_celestial_wcs
 
 import fits_magic as fm
-import util
+import utils
 
 
 class continuum_mosaic:
@@ -18,8 +18,8 @@ class continuum_mosaic:
 
 
     def __init__(self, file_=None, **kwargs):
-        self.default = util.load_config(self, file_)
-        util.set_mosdirs(self)
+        self.default = utils.load_config(self, file_)
+        utils.set_mosdirs(self)
         self.config_file_name = file_
 
 
@@ -28,7 +28,7 @@ class continuum_mosaic:
         Function to generate the continuum mosaic
         """
         self.cp_data()
-        images, pbimages = util.get_contfiles(self)
+        images, pbimages = utils.get_contfiles(self)
         self.make_contmosaic(images, pbimages)
 
 
@@ -36,9 +36,9 @@ class continuum_mosaic:
         """
         Function to generate the needed directories and copy the images and beams over
         """
-        util.gen_contdirs(self)
-        util.copy_contimages(self)
-        util.copy_contbeams(self)
+        utils.gen_contdirs(self)
+        utils.copy_contimages(self)
+        utils.copy_contbeams(self)
 
 
     def make_contmosaic(self, images, pbimages, reference=None, pbclip=None):
@@ -47,7 +47,7 @@ class continuum_mosaic:
         """
 
         # Get the common psf
-        common_psf = util.get_common_psf(images)
+        common_psf = utils.get_common_psf(self, images)
 
         corrimages = [] # to mosaic
         pbweights = [] # of the pixels
@@ -126,4 +126,4 @@ class continuum_mosaic:
         pyfits.writeto(self.contmosaicdir + '/' + str(tg).upper() + '.fits', data=array,
                      header=hdr, overwrite=True)
 
-        util.clean_contmosaic_tmp_data(self)
+        utils.clean_contmosaic_tmp_data(self)
