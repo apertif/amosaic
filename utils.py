@@ -73,7 +73,7 @@ def copy_contimages(self):
     if self.mode == 'all':
         # copy all the images from the continuum directory
         for image in range(40):
-            os.system('cp ' + os.path.join(self.basedir, self.obsid) + '/' + str(image).zfill(2) + '/continuum/image* ' + self.contimagedir + '/I' + str(image).zfill(2) + '.fits')
+            os.system('cp ' + os.path.join(self.basedir, self.obsid) + '/' + str(image).zfill(2) + '/continuum/image_mf_*.fits ' + self.contimagedir + '/I' + str(image).zfill(2) + '.fits')
     elif self.mode == 'qa':
         # Load the qa-continuum file and only copy the images with good quality
         c_arr = np.full(40, True)
@@ -82,17 +82,17 @@ def copy_contimages(self):
             c_arr[np.where(data['col2'] == 'X')] = False
             for image in range(40):
                 if c_arr[image]:
-                    os.system('cp ' + os.path.join(self.basedir, self.obsid) + '/' + str(image).zfill(2) + '/continuum/image* ' + self.contimagedir + '/I' + str(image).zfill(2) + '.fits')
+                    os.system('cp ' + os.path.join(self.basedir, self.obsid) + '/' + str(image).zfill(2) + '/continuum/image_mf_*.fits ' + self.contimagedir + '/I' + str(image).zfill(2) + '.fits')
                 else:
                     print('Image for beam ' + str(image).zfill(2) + ' not available or validated as bad!')
         else:
             print('No continuum quality assurance available for observation id ' + str(self.obsid) + '. Copying all available images.')
             for image in range(40):
-                os.system('cp ' + os.path.join(self.basedir, self.obsid) + '/' + str(image).zfill(2) + '/continuum/image* ' + self.contimagedir + '/I' + str(image).zfill(2) + '.fits')
+                os.system('cp ' + os.path.join(self.basedir, self.obsid) + '/' + str(image).zfill(2) + '/continuum/image_mf_*.fits ' + self.contimagedir + '/I' + str(image).zfill(2) + '.fits')
     elif (type(self.mode) == list):
         # Copy only the beams given as a list
         for image in self.mode:
-            os.system('cp ' + os.path.join(self.basedir, self.obsid) + '/' + str(image).zfill(2) + '/continuum/image* ' + self.contimagedir + '/I' + str(image).zfill(2) + '.fits')
+            os.system('cp ' + os.path.join(self.basedir, self.obsid) + '/' + str(image).zfill(2) + '/continuum/image_mf_*.fits ' + self.contimagedir + '/I' + str(image).zfill(2) + '.fits')
 
 
 def copy_contbeams(self):
