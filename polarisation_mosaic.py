@@ -74,25 +74,25 @@ class polarisation_mosaic:
         # Iterate through the rms and beam sizes of all cubes and filter the images
         for b in range(40):
             for sb in range(24):
-                if rms_array[b, sb, 0] > 0.0005 or np.isnan(rms_array[b, sb, 0]):
+                if rms_array[b, sb, 0] > self.pol_rmsclip or np.isnan(rms_array[b, sb, 0]):
                     accept_array[b, sb] = False
                 else:
                     continue
 
             for sb in range(24):
-                if rms_array[b, sb, 1] > 0.0005 or np.isnan(rms_array[b, sb, 1]):
+                if rms_array[b, sb, 1] > self.pol_rmsclip or np.isnan(rms_array[b, sb, 1]):
                     accept_array[b, sb] = False
                 else:
                     continue
 
             for sb in range(24):
-                if bmin_array[b, sb, 0] > 17.5 or bmin_array[b, sb, 1] > 17.5:
+                if bmin_array[b, sb, 0] > self.pol_bmin or bmin_array[b, sb, 1] > self.pol_bmin:
                     accept_array[b, sb] = False
                 else:
                     continue
 
             for sb in range(24):
-                if bmaj_array[b, sb, 0] > 30.0 or bmaj_array[b, sb, 1] > 30.0:
+                if bmaj_array[b, sb, 0] > self.pol_bmaj or bmaj_array[b, sb, 1] > self.pol_bmaj:
                     accept_array[b, sb] = False
                 else:
                     continue
@@ -100,7 +100,7 @@ class polarisation_mosaic:
         bacc = np.full(40, True)
         # Count number of False for each beam and filter all beams out where more than 2 planes or more are bad
         for b in range(40):
-            if len(np.where(accept_array[b, :] == False)[0]) > 2:
+            if len(np.where(accept_array[b, :] == False)[0]) > self.pol_badim:
                 bacc[b] = False
             else:
                 continue
