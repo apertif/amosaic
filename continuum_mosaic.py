@@ -72,7 +72,7 @@ class continuum_mosaic:
         # reproject
                 reproj_arr, reproj_footprint = reproject_interp(pbhdu, imheader)
 
-            pbclip = self.pbclip or autoclip
+            pbclip = self.cont_pbclip or autoclip
             print('PB is clipped at %f level', pbclip)
             reproj_arr = np.float32(reproj_arr)
             reproj_arr[reproj_arr < pbclip] = np.nan

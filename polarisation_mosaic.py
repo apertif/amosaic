@@ -68,7 +68,12 @@ class polarisation_mosaic:
                 bmin_array[beam, :] = utils.get_param(self, 'polarisation_B' + str(beam).zfill(2) + '_targetbeams_qu_beamparams')[:, 1, :]
                 bpa_array[beam, :] = utils.get_param(self, 'polarisation_B' + str(beam).zfill(2) + '_targetbeams_qu_beamparams')[:, 2, :]
             except KeyError:
-                continue
+                print('Synthesised beam parameters and/or noise statistics of beam ' + str(beam).zfill(2) + ' are not available. Excluding beam!')
+        np.savetxt(self.polmosaicdir + '/Qrms.npy', rms_array[:,:,0])
+        np.savetxt(self.polmosaicdir + '/Urms.npy', rms_array[:,:,1])
+        np.savetxt(self.polmosaicdir + '/bmaj.npy', bmaj_array[:,:,0])
+        np.savetxt(self.polmosaicdir + '/bmin.npy', bmin_array[:,:,0])
+        np.savetxt(self.polmosaicdir + '/bpa.npy', bpa_array[:,:,1])
         # Create an array for the accepted beams
         accept_array = np.full((40, 24), True)
         # Iterate through the rms and beam sizes of all cubes and filter the images
@@ -97,14 +102,18 @@ class polarisation_mosaic:
                 else:
                     continue
         # Generate the main array for accepting the beams
-        bacc = np.full(40, True)
+        bacc_array = np.full(40, True)
+        badim_array = np.zeros((40))
         # Count number of False for each beam and filter all beams out where more than 2 planes or more are bad
         for b in range(40):
-            if len(np.where(accept_array[b, :] == False)[0]) > self.pol_badim:
-                bacc[b] = False
+            badim_array[b] = len(np.where(accept_array[b, :] == False)[0])
+            if badim_array[b] > self.pol_badim:
+                bacc_array[b] = False
             else:
                 continue
-        return bacc
+        np.savetxt(self.polmosaicdir + '/badim.npy', badim_array)
+        np.savetxt(self.polmosaicdir + '/bacc.npy', bacc_array)
+        return bacc_array
 
 
     def make_polmosaic(self, qimages, uimages, pbimages, sb, psf, reference=None, pbclip=None):
@@ -153,7 +162,7 @@ class polarisation_mosaic:
                 qreproj_arr, qreproj_footprint = reproject_interp(pbhdu, qimheader)
                 ureproj_arr, ureproj_footprint = reproject_interp(pbhdu, uimheader)
 
-            pbclip = self.pbclip or autoclip
+            pbclip = self.pol_pbclip or autoclip
             print('PB is clipped at %f level', pbclip)
             qreproj_arr = np.float32(qreproj_arr)
             ureproj_arr = np.float32(ureproj_arr)
