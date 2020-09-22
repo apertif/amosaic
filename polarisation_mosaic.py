@@ -29,9 +29,9 @@ class polarisation_mosaic:
         """
         Function to generate the polarisation mosaics
         """
+        utils.gen_poldirs(self)
         veri = self.verify_pol()
         cbeam = utils.get_common_psf(self, veri, format ='array')
-        utils.gen_poldirs(self)
         for sb in range(24):
             try:
                 utils.copy_polimages(self, sb, veri)
