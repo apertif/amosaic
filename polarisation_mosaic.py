@@ -71,9 +71,12 @@ class polarisation_mosaic:
                 print('Synthesised beam parameters and/or noise statistics of beam ' + str(beam).zfill(2) + ' are not available. Excluding beam!')
         np.savetxt(self.polmosaicdir + '/Qrms.npy', rms_array[:,:,0])
         np.savetxt(self.polmosaicdir + '/Urms.npy', rms_array[:,:,1])
-        np.savetxt(self.polmosaicdir + '/bmaj.npy', bmaj_array[:,:,0])
-        np.savetxt(self.polmosaicdir + '/bmin.npy', bmin_array[:,:,0])
-        np.savetxt(self.polmosaicdir + '/bpa.npy', bpa_array[:,:,1])
+        np.savetxt(self.polmosaicdir + '/Qbmaj.npy', bmaj_array[:,:,0])
+        np.savetxt(self.polmosaicdir + '/Qbmin.npy', bmin_array[:,:,0])
+        np.savetxt(self.polmosaicdir + '/Qbpa.npy', bpa_array[:,:,0])
+        np.savetxt(self.polmosaicdir + '/Ubmaj.npy', bmaj_array[:,:,1])
+        np.savetxt(self.polmosaicdir + '/Ubmin.npy', bmin_array[:,:,1])
+        np.savetxt(self.polmosaicdir + '/Ubpa.npy', bpa_array[:,:,1])
         # Create an array for the accepted beams
         accept_array = np.full((40, 24), True)
         # Iterate through the rms and beam sizes of all cubes and filter the images
