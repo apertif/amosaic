@@ -310,6 +310,16 @@ class polarisation_mosaic:
             repr_image = reproject_interp(hdu, hduref_hdr, return_footprint=False)
             pyfits.writeto(image.replace('.fits','_repr.fits'), repr_image, hduref_hdr, overwrite=True)
 
+        # Check for empty images and remove them
+        allremove = sorted(glob.glob(self.polmosaicdir + '/*_repr.fits'))
+        for image in allremove:
+            hdu = pyfits.open(image)[0]
+            hdu_data = hdu.data
+            if np.all(np.isnan(hdu_data)):
+                os.remove(image)
+            else:
+                continue
+
         # Generate a mask to limit the valid area for all images to the largest common valid one
         allreprims = sorted(glob.glob(self.polmosaicdir + '/*_repr.fits'))
         nall = len(allreprims)
