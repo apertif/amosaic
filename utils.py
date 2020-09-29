@@ -257,7 +257,13 @@ def get_common_psf(self, input, format='fits'):
 #            beam = Beam.from_fits_header(ih)
 #            print(beam)
 #            beams.append(beam)
-        beams = Beams(bmajes * u.deg, bmines * u.deg, bpas * u.deg)
+        for i in range(0, len(bmajes) - 1):
+            ni = i + 1
+            beams = Beams((bmajes[[i, ni]]) * u.deg, (bmines[[i, ni]]) * u.deg, bpas[[i, ni]] * u.deg)
+            common = commonbeam.commonbeam(beams)
+            bmajes[ni] = common.major/u.deg
+            bmines[ni] = common.minor / u.deg
+            bpas[ni] = common.pa / u.deg
     elif format == 'array':
         for b in range(40):
             if input[b]:
@@ -270,12 +276,20 @@ def get_common_psf(self, input, format='fits'):
         bmajarr = bmajarr[~pd.isnull(bmajarr)]
         bminarr = bminarr[~pd.isnull(bminarr)]
         bpaarr = bpaarr[~pd.isnull(bpaarr)]
-        beams = Beams((bmajarr/3600.0) * u.deg, (bminarr/3600.0) * u.deg, bpaarr * u.deg)
-    common = beams.common_beam()
+        for i in range(0, len(bmajarr) - 1):
+            ni = i + 1
+            beams = Beams((bmajarr[[i,ni]]/3600.0) * u.deg, (bminarr[[i,ni]]/3600.0) * u.deg, bpaarr[[i,ni]] * u.deg)
+            common = commonbeam.commonbeam(beams)
+            bmajarr[ni] = (common.major / u.deg) * 3600.0
+            bminarr[ni] = (common.minor / u.deg) * 3600.0
+            bpaarr[ni] = common.pa / u.deg
+#        beams = Beams((bmajarr/3600.0) * u.deg, (bminarr/3600.0) * u.deg, bpaarr * u.deg)
+#    common = beams.common_beam()
 #    common = commonbeam.common_manybeams_opt(beams, p0=(np.max(bmajes), np.max(bmines), np.median(bpas)))
 #    common = commonbeam.common_manybeams_mve(beams)
-    smallest = beams.smallest_beam()
-    print('PSF:\n  Smallest PSF: %s\n  Common PSF: %s', smallest, common)
+#    smallest = beams.smallest_beam()
+#    print('PSF:\n  Smallest PSF: %s\n  Common PSF: %s', smallest, common)
+    print('The smallest common ' + str(common))
     return common
 
 
