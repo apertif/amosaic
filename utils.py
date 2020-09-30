@@ -276,6 +276,7 @@ def get_common_psf(self, input, format='fits'):
         for sb in range(24):
             if np.sum(accept_array[:,sb]) < np.sum(bacc_array):
                 sb_bad[sb] = False
+        np.savetxt(sb_bad, self.polmosaicdir + '/sb_array.npy')
         beams_bad = np.tile(sb_bad, int(np.sum(bacc_array)))
         for idx, image in enumerate(beams_bad):
             if image:

@@ -30,26 +30,20 @@ class polarisation_mosaic:
         Function to generate the polarisation mosaics
         """
         utils.gen_poldirs(self)
-        veri = self.verify_pol()
-        cbeam = utils.get_common_psf(self, veri, format ='array')
-        for sb in range(24):
-            try:
-                utils.copy_polimages(self, sb, veri)
-                utils.copy_polbeams(self)
-                qimages, uimages, pbimages = utils.get_polfiles(self)
-                self.make_polmosaic(qimages, uimages, pbimages, sb, cbeam)
-            except:
-                continue
-        self.make_polcubes()
-
-
-    def verify_pol(self):
-        """
-        Function to verify the polarisation images and generate a matrix of usable images and planes
-        """
         utils.collect_paramfiles(self)
-        verification_array = self.check_polimages()
-        return verification_array
+        veri = self.check_polimages()
+        cbeam = utils.get_common_psf(self, veri, format ='array')
+        sb_acc = np.loadtxt(self.polmosaicdir + '/sb_array.npy')
+        for sb in range(24):
+            if sb_acc[sb]:
+                try:
+                    utils.copy_polimages(self, sb, veri)
+                    utils.copy_polbeams(self)
+                    qimages, uimages, pbimages = utils.get_polfiles(self)
+                    self.make_polmosaic(qimages, uimages, pbimages, sb, cbeam)
+                except:
+                    continue
+        self.make_polcubes()
 
 
     def check_polimages(self):
