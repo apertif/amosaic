@@ -104,6 +104,7 @@ class polarisation_mosaic:
                     accept_array[b, sb] = False
                 else:
                     continue
+        np.savetxt(self.polmosaicdir + '/accept_array.npy', accept_array)
         # Generate the main array for accepting the beams
         bacc_array = np.full(40, True)
         badim_array = np.zeros((40))

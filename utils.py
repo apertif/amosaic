@@ -265,11 +265,25 @@ def get_common_psf(self, input, format='fits'):
             bmines[ni] = common.minor / u.deg
             bpas[ni] = common.pa / u.deg
     elif format == 'array':
+        accept_array = np.loadtxt(self.polmosaicdir + '/accept_array.npy')
+        bacc_array = np.loadtxt(self.polmosaicdir + '/bacc.npy')
         for b in range(40):
             if input[b]:
                 bmajes.extend(get_param(self, 'polarisation_B' + str(b).zfill(2) + '_targetbeams_qu_beamparams')[:, 0, 0])
                 bmines.extend(get_param(self, 'polarisation_B' + str(b).zfill(2) + '_targetbeams_qu_beamparams')[:, 1, 0])
                 bpas.extend(get_param(self, 'polarisation_B' + str(b).zfill(2) + '_targetbeams_qu_beamparams')[:, 2, 0])
+        sb_bad = np.full(24, True, dtype=bool)
+        for sb in range(24):
+            if np.sum(accept_array[:,sb]) < np.sum(bacc_array):
+                sb_bad[sb] = False
+        beams_bad = np.tile(sb_bad, int(np.sum(bacc_array)))
+        for idx, image in enumerate(beams_bad):
+            if image:
+                continue
+            else:
+                bmajes[idx] = np.nan
+                bmines[idx] = np.nan
+                bpas[idx] = np.nan
         bmajarr = np.array(bmajes)
         bminarr = np.array(bmines)
         bpaarr = np.array(bpas)
