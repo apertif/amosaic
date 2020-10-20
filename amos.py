@@ -34,7 +34,7 @@ import logging
 
 
 def clean_mosaic_tmp_data(path='.'):
-    cmd = 'cd {path} && rm *_tmp.fits *_repr.fits *_reconv.fits *_pbcorr.fits casa*.log'.format(path=path)
+    cmd = 'cd {path} && rm *_tmp.fits *_reconv.fits *_repr.fits *_pbcorr.fits'.format(path=path)
     subprocess.call(cmd, shell=True)
 
 
@@ -206,6 +206,15 @@ def fits_crop(fitsfile, out=None):
     return out, cutout
 
 
+def fits_transpose(fitsfile):
+    logging.warning('Transposing data in %s', fitsfile)
+    with fits.open(fitsfile, mode='update') as hdul:
+        hdul[0].data = hdul[0].data.T
+        hdul.flush()
+    return fitsfile
+
+
+
 def pbcorrect(image, pbimage, pbclip=None, out=None):
     tmpimg = make_tmp_copy(image)
     tmppb = make_tmp_copy(pbimage)
@@ -244,6 +253,7 @@ def main(images, pbimages, reference=None, pbclip=0.1, output='mosaic.fits', log
         logger.info('Image: %s', img)
         logger.info('PBeam: %s', pb)
 # prepare the images (squeeze, transfer_coordinates, reproject, regrid pbeam, correct...)
+
 # PB correction
         pbcorr_image = os.path.basename(img.replace('.fits', '_pbcorr.fits'))
         pbcorr_image, pbarray = pbcorrect(img, pb, pbclip=pbclip, out=pbcorr_image)
