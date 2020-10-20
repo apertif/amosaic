@@ -267,7 +267,7 @@ def main(images, pbimages, reference=None, pbclip=0.1, output='mosaic.fits', log
 # primary beam weights
         wg_arr = pbarray - pbclip # the edges weight ~0
         wg_arr[np.isnan(wg_arr)] = 0 # the NaNs weight 0
-        wg_arr = wg_arr / np.nanmax(wg_arr) # normalize
+        wg_arr = wg_arr**2 / np.nanmax(wg_arr**2) # normalize
         wcut = Cutout2D(wg_arr, cutout.input_position_original, cutout.shape)
         pbweights.append(wcut.data)
 # weight the images by RMS noise over the edges
