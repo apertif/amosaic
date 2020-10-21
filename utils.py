@@ -142,15 +142,18 @@ def clean_contmosaic_tmp_data(self):
     os.system('rm -rf ' + self.contimagedir + '/casa*.log')
 
 
-def clean_polmosaic_tmp_data(self):
-    os.system('rm -rf ' + self.polimagedir + '/*_tmp.fits')
-    os.system('rm -rf ' + self.polimagedir + '/*_repr.fits')
-    os.system('rm -rf ' + self.polimagedir + '/*_reconv.fits')
-    os.system('rm -rf ' + self.polimagedir + '/*_pbcorr.fits')
+def clean_polmosaic_tmp_data(self, sb):
+    os.system('rm -rf ' + self.polimagedir + '/Q_B[0-9][0-9]_SB' + str(sb).zfill(2) + '_repr.fits')
+    os.system('rm -rf ' + self.polimagedir + '/U_B[0-9][0-9]_SB' + str(sb).zfill(2) + '_repr.fits')
+    os.system('rm -rf ' + self.polimagedir + '/Q_B[0-9][0-9]_SB' + str(sb).zfill(2) + '_reconv.fits')
+    os.system('rm -rf ' + self.polimagedir + '/U_B[0-9][0-9]_SB' + str(sb).zfill(2) + '_reconv.fits')
+    os.system('rm -rf ' + self.polimagedir + '/Q_B[0-9][0-9]_SB' + str(sb).zfill(2) + '_pbcorr.fits')
+    os.system('rm -rf ' + self.polimagedir + '/U_B[0-9][0-9]_SB' + str(sb).zfill(2) + '_pbcorr.fits')
+    os.system('rm -rf ' + self.polimagedir + '/Q_B[0-9][0-9]_SB' + str(sb).zfill(2) + '_mos.fits')
+    os.system('rm -rf ' + self.polimagedir + '/U_B[0-9][0-9]_SB' + str(sb).zfill(2) + '_mos.fits')
+    os.system('rm -rf ' + self.polimagedir + '/PB_B[0-9][0-9]_SB' + str(sb).zfill(2) + '.fits')
+    os.system('rm -rf ' + self.polimagedir + '/PB_B[0-9][0-9]_SB' + str(sb).zfill(2) + '_repr.fits')
     os.system('rm -rf ' + self.polimagedir + '/casa*.log')
-    os.system('rm -rf ' + self.polimagedir + '/Q*.fits')
-    os.system('rm -rf ' + self.polimagedir + '/U*.fits')
-    os.system('rm -rf ' + self.polbeamdir + '/B*.fits')
 
 
 def gen_poldirs(self):
@@ -178,26 +181,36 @@ def gen_poldirs(self):
         os.makedirs(self.polmosaicdir)
 
 
-def copy_polimages(self, sb, veri):
+def copy_polimages(self, veri):
     """
     Function to copy the polarisation images of a specific subband to the working directory
     """
     for b in range(40):
-        if veri[b]:
-            qcube = pyfits.open(os.path.join(self.basedir, self.obsid, str(b).zfill(2), 'polarisation/Qcube.fits'))
-            ucube = pyfits.open(os.path.join(self.basedir, self.obsid, str(b).zfill(2), 'polarisation/Ucube.fits'))
-            qhdu = qcube[0]
-            uhdu = ucube[0]
-            qhdr = qhdu.header
-            uhdr = uhdu.header
-            qplane = qhdu.data[sb,:,:]
-            uplane = uhdu.data[sb,:,:]
-            newqfreq = qhdr['CRVAL3'] + float(sb) * qhdr['CDELT3']
-            newufreq = uhdr['CRVAL3'] + float(sb) * uhdr['CDELT3']
-            qhdr.update(NAXIS3=1, CRVAL3=newqfreq)
-            uhdr.update(NAXIS3=1, CRVAL3=newufreq)
-            pyfits.writeto(self.polimagedir + '/Q' + str(b).zfill(2) + '.fits', data=qplane, header=qhdr)
-            pyfits.writeto(self.polimagedir + '/U' + str(b).zfill(2) + '.fits', data=uplane, header=uhdr)
+        for sb in range(24):
+            if veri[b, sb]:
+                qcube = pyfits.open(os.path.join(self.basedir, self.obsid, str(b).zfill(2), 'polarisation/Qcube.fits'))
+                ucube = pyfits.open(os.path.join(self.basedir, self.obsid, str(b).zfill(2), 'polarisation/Ucube.fits'))
+                qhdu = qcube[0]
+                uhdu = ucube[0]
+                qhdr = qhdu.header
+                uhdr = uhdu.header
+                qplane = qhdu.data[sb,:,:]
+                uplane = uhdu.data[sb,:,:]
+                newqfreq = qhdr['CRVAL3'] + float(sb) * qhdr['CDELT3']
+                newufreq = uhdr['CRVAL3'] + float(sb) * uhdr['CDELT3']
+                qhdr.update(NAXIS3=1, CRVAL3=newqfreq)
+                uhdr.update(NAXIS3=1, CRVAL3=newufreq)
+                # Get the beam synthesised beam parameters and put them into the header
+                qbmaj = get_param(self, 'polarisation_B' + str(b).zfill(2) + '_targetbeams_qu_beamparams')[:, 0, 0][sb]
+                qbmin = get_param(self, 'polarisation_B' + str(b).zfill(2) + '_targetbeams_qu_beamparams')[:, 1, 0][sb]
+                qbpa = get_param(self, 'polarisation_B' + str(b).zfill(2) + '_targetbeams_qu_beamparams')[:, 2, 0][sb]
+                ubmaj = get_param(self, 'polarisation_B' + str(b).zfill(2) + '_targetbeams_qu_beamparams')[:, 0, 1][sb]
+                ubmin = get_param(self, 'polarisation_B' + str(b).zfill(2) + '_targetbeams_qu_beamparams')[:, 1, 1][sb]
+                ubpa = get_param(self, 'polarisation_B' + str(b).zfill(2) + '_targetbeams_qu_beamparams')[:, 2, 1][sb]
+                qhdr.update(BMAJ=qbmaj/3600.0, BMIN=qbmin/3600.0, BPA=qbpa)
+                uhdr.update(BMAJ=ubmaj / 3600.0, BMIN=ubmin / 3600.0, BPA=ubpa)
+                pyfits.writeto(self.polimagedir + '/Q_B' + str(b).zfill(2) + '_SB' + str(sb).zfill(2) + '.fits', data=qplane, header=qhdr, overwrite=True)
+                pyfits.writeto(self.polimagedir + '/U_B' + str(b).zfill(2) + '_SB' + str(sb).zfill(2) + '.fits', data=uplane, header=uhdr, overwrite=True)
 
 
 def copy_polbeams(self):
@@ -223,74 +236,62 @@ def copy_polbeams(self):
 
     # Copy the beam models with the right frequency over to the working directory
     for beam in range(40):
-        if os.path.isfile(self.polimagedir + '/Q' + str(beam).zfill(2) + '.fits'):
-            hdulist = pyfits.open(self.polimagedir + '/Q' + str(beam).zfill(2) + '.fits')
-            freq = hdulist[0].header['CRVAL3']
-            nchann = np.argmin(np.abs(freqs - freq)) + 1
-            os.system('cp ' + os.path.join(rightbeamdir, 'beam_models/chann_' + str(nchann) + '/') + rightbeamdir.split('/')[-1] + '_' + str(beam).zfill(2) + '_I_model.fits ' + self.polbeamdir + '/B' + str(beam).zfill(2) + '.fits')
+        for sb in range(24):
+            if os.path.isfile(self.polimagedir + '/Q_B' + str(b).zfill(2) + '_SB' + str(sb).zfill(2) + '.fits'):
+                hdulist = pyfits.open(self.polimagedir + '/Q_B' + str(b).zfill(2) + '_SB' + str(sb).zfill(2) + '.fits')
+                freq = hdulist[0].header['CRVAL3']
+                nchann = np.argmin(np.abs(freqs - freq)) + 1
+                os.system('cp ' + os.path.join(rightbeamdir, 'beam_models/chann_' + str(nchann) + '/') + rightbeamdir.split('/')[-1] + '_' + str(beam).zfill(2) + '_I_model.fits ' + self.polbeamdir + '/PB_B' + str(beam).zfill(2) + '_SB' + str(sb).zfill(2) + '.fits')
 
 
-def get_polfiles(self):
+def get_polfiles(self, sb):
     """
     Get a list of the images and pbimages in the polarisation working directory
     """
-    qimages = sorted(glob.glob(self.polimagedir + '/Q[0-9][0-9].fits'))
-    uimages = sorted(glob.glob(self.polimagedir + '/U[0-9][0-9].fits'))
-    pbimages = sorted(glob.glob(self.polbeamdir + '/B[0-9][0-9].fits'))
+    qimages = sorted(glob.glob(self.polimagedir + '/Q_B[0-9][0-9]_SB' + str(sb).zfill(2) + '.fits'))
+    uimages = sorted(glob.glob(self.polimagedir + '/U_B[0-9][0-9]_SB' + str(sb).zfill(2) + '.fits'))
+    pbimages = sorted(glob.glob(self.polbeamdir + '/PB_B[0-9][0-9]_SB' + str(sb).zfill(2) + '.fits'))
     return qimages, uimages, pbimages
 
 
-def get_common_psf(self, input, format='fits'):
+def get_common_psf(self, veri, format='fits'):
     """
     Common psf for the list of fits files
     """
     beams = []
-    bmajes = []
-    bmines = []
-    bpas = []
+
     if format == 'fits':
-        for f in input:
+        bmajes = []
+        bmines = []
+        bpas = []
+        for f in veri:
             ih = pyfits.getheader(f)
             bmajes.append(ih['BMAJ'])
             bmines.append(ih['BMIN'])
             bpas.append(ih['BPA'])
-#            beam = Beam.from_fits_header(ih)
-#            print(beam)
-#            beams.append(beam)
-        for i in range(0, len(bmajes) - 1):
-            ni = i + 1
-            beams = Beams((bmajes[[i, ni]]) * u.deg, (bmines[[i, ni]]) * u.deg, bpas[[i, ni]] * u.deg)
-            common = commonbeam.commonbeam(beams)
-            bmajes[ni] = common.major/u.deg
-            bmines[ni] = common.minor / u.deg
-            bpas[ni] = common.pa / u.deg
-    elif format == 'array':
-        accept_array = np.loadtxt(self.polmosaicdir + '/accept_array.npy')
-        bacc_array = np.loadtxt(self.polmosaicdir + '/bacc.npy')
-        for b in range(40):
-            if input[b]:
-                bmajes.extend(get_param(self, 'polarisation_B' + str(b).zfill(2) + '_targetbeams_qu_beamparams')[:, 0, 0])
-                bmines.extend(get_param(self, 'polarisation_B' + str(b).zfill(2) + '_targetbeams_qu_beamparams')[:, 1, 0])
-                bpas.extend(get_param(self, 'polarisation_B' + str(b).zfill(2) + '_targetbeams_qu_beamparams')[:, 2, 0])
-        sb_bad = np.full(24, True, dtype=bool)
-        for sb in range(24):
-            if np.sum(accept_array[:,sb]) < np.sum(bacc_array):
-                sb_bad[sb] = False
-        np.savetxt(self.polmosaicdir + '/sb_array.npy', sb_bad)
-        beams_bad = np.tile(sb_bad, int(np.sum(bacc_array)))
-        for idx, image in enumerate(beams_bad):
-            if image:
-                continue
-            else:
-                bmajes[idx] = np.nan
-                bmines[idx] = np.nan
-                bpas[idx] = np.nan
         bmajarr = np.array(bmajes)
         bminarr = np.array(bmines)
         bpaarr = np.array(bpas)
-        bmajarr = bmajarr[~pd.isnull(bmajarr)]
-        bminarr = bminarr[~pd.isnull(bminarr)]
-        bpaarr = bpaarr[~pd.isnull(bpaarr)]
+        for i in range(0, len(bmajes) - 1):
+            ni = i + 1
+            beams = Beams((bmajarr[[i, ni]]) * u.deg, (bminarr[[i, ni]]) * u.deg, bpaarr[[i, ni]] * u.deg)
+            common = commonbeam.commonbeam(beams)
+            bmajarr[ni] = common.major/u.deg
+            bminarr[ni] = common.minor / u.deg
+            bpaarr[ni] = common.pa / u.deg
+    elif format == 'array':
+        bmajes = np.empty(0)
+        bmines = np.empty(0)
+        bpas = np.empty(0)
+        for b in range(40):
+            for sb in range(24):
+                if veri[b,sb]:
+                    bmajes = np.append(bmajes, (get_param(self, 'polarisation_B' + str(b).zfill(2) + '_targetbeams_qu_beamparams')[:, 0, 0][sb]))
+                    bmines = np.append(bmines, (get_param(self, 'polarisation_B' + str(b).zfill(2) + '_targetbeams_qu_beamparams')[:, 1, 0][sb]))
+                    bpas = np.append(bpas, (get_param(self, 'polarisation_B' + str(b).zfill(2) + '_targetbeams_qu_beamparams')[:, 2, 0][sb]))
+        bmajarr = bmajes[~pd.isnull(bmajes)]
+        bminarr = bmines[~pd.isnull(bmines)]
+        bpaarr = bpas[~pd.isnull(bpas)]
         for i in range(0, len(bmajarr) - 1):
             ni = i + 1
             beams = Beams((bmajarr[[i,ni]]/3600.0) * u.deg, (bminarr[[i,ni]]/3600.0) * u.deg, bpaarr[[i,ni]] * u.deg)
@@ -298,12 +299,8 @@ def get_common_psf(self, input, format='fits'):
             bmajarr[ni] = (common.major / u.deg) * 3600.0
             bminarr[ni] = (common.minor / u.deg) * 3600.0
             bpaarr[ni] = common.pa / u.deg
-#        beams = Beams((bmajarr/3600.0) * u.deg, (bminarr/3600.0) * u.deg, bpaarr * u.deg)
-#    common = beams.common_beam()
-#    common = commonbeam.common_manybeams_opt(beams, p0=(np.max(bmajes), np.max(bmines), np.median(bpas)))
-#    common = commonbeam.common_manybeams_mve(beams)
-#    smallest = beams.smallest_beam()
-#    print('PSF:\n  Smallest PSF: %s\n  Common PSF: %s', smallest, common)
+    common = Beam.__new__(Beam, major=common.major * 1.01, minor=common.minor * 1.01, pa=common.pa)
+    print('Increased final smallest common beam by 1 %')
     print('The smallest common ' + str(common))
     return common
 

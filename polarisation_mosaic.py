@@ -32,17 +32,15 @@ class polarisation_mosaic:
         utils.gen_poldirs(self)
         utils.collect_paramfiles(self)
         veri = self.check_polimages()
-        cbeam = utils.get_common_psf(self, veri, format ='array')
-        sb_acc = np.loadtxt(self.polmosaicdir + '/sb_array.npy')
+        utils.copy_polimages(self, veri)
+        utils.copy_polbeams(self)
+        cbeam = utils.get_common_psf(self, veri, format='array')
         for sb in range(24):
-            if sb_acc[sb]:
-                try:
-                    utils.copy_polimages(self, sb, veri)
-                    utils.copy_polbeams(self)
-                    qimages, uimages, pbimages = utils.get_polfiles(self)
-                    self.make_polmosaic(qimages, uimages, pbimages, sb, cbeam)
-                except:
-                    continue
+            qimages, uimages, pbimages = utils.get_polfiles(self, sb)
+            if len(qimages) != 0:
+                self.make_polmosaic(qimages, uimages, pbimages, sb, cbeam, pbclip=self.pol_pbclip)
+            else:
+                print('No data for subband ' + str(sb).zfill(2))
         self.make_polcubes()
 
 
@@ -64,10 +62,10 @@ class polarisation_mosaic:
             except KeyError:
                 print('Synthesised beam parameters and/or noise statistics of beam ' + str(beam).zfill(2) + ' are not available. Excluding beam!')
         np.savetxt(self.polmosaicdir + '/Qrms.npy', rms_array[:,:,0])
-        np.savetxt(self.polmosaicdir + '/Urms.npy', rms_array[:,:,1])
         np.savetxt(self.polmosaicdir + '/Qbmaj.npy', bmaj_array[:,:,0])
         np.savetxt(self.polmosaicdir + '/Qbmin.npy', bmin_array[:,:,0])
         np.savetxt(self.polmosaicdir + '/Qbpa.npy', bpa_array[:,:,0])
+        np.savetxt(self.polmosaicdir + '/Urms.npy', rms_array[:, :, 1])
         np.savetxt(self.polmosaicdir + '/Ubmaj.npy', bmaj_array[:,:,1])
         np.savetxt(self.polmosaicdir + '/Ubmin.npy', bmin_array[:,:,1])
         np.savetxt(self.polmosaicdir + '/Ubpa.npy', bpa_array[:,:,1])
@@ -100,18 +98,33 @@ class polarisation_mosaic:
                     continue
         np.savetxt(self.polmosaicdir + '/accept_array.npy', accept_array)
         # Generate the main array for accepting the beams
-        bacc_array = np.full(40, True)
+        bacc_array = np.full(40, True, dtype=bool)
         badim_array = np.zeros((40))
-        # Count number of False for each beam and filter all beams out where more than 2 planes or more are bad
+        # Count number of False for each beam and filter all beams out where more than x planes or more are bad
         for b in range(40):
             badim_array[b] = len(np.where(accept_array[b, :] == False)[0])
             if badim_array[b] > self.pol_badim:
                 bacc_array[b] = False
+                accept_array[b, :] = False
             else:
                 continue
         np.savetxt(self.polmosaicdir + '/badim.npy', badim_array)
         np.savetxt(self.polmosaicdir + '/bacc.npy', bacc_array)
-        return bacc_array
+        # Generate the array for accepting the subbands
+        sb_acc = np.full(24, True, dtype=bool)
+        for sb in range(24):
+            if np.sum(accept_array[:, sb]) < np.sum(bacc_array):
+                sb_acc[sb] = False
+        np.savetxt(self.polmosaicdir + '/sbacc.npy', sb_acc)
+        final_acc_arr = np.full((40, 24), True)
+        for b in range(40):
+            for sb in range(24):
+                if bacc_array[b] and sb_acc[sb]:
+                    final_acc_arr[b,sb] = True
+                else:
+                    final_acc_arr[b,sb] = False
+        np.savetxt(self.polmosaicdir + '/final_accept.npy', final_acc_arr)
+        return final_acc_arr
 
 
     def make_polmosaic(self, qimages, uimages, pbimages, sb, psf, reference=None, pbclip=None):
@@ -176,9 +189,9 @@ class polarisation_mosaic:
             ureconvolved_image = uimg.replace('.fits', '_reconv.fits')
             ureconvolved_image = fm.fits_reconvolve_psf(uimg, common_psf, out=ureconvolved_image)
         # PB correction
-            qpbcorr_image = qreconvolved_image.replace('.fits', '_pbcorr.fits')
+            qpbcorr_image = qreconvolved_image.replace('_reconv.fits', '_pbcorr.fits')
             qpbcorr_image = fm.fits_operation(qreconvolved_image, qreproj_arr, operation='/', out=qpbcorr_image)
-            upbcorr_image = ureconvolved_image.replace('.fits', '_pbcorr.fits')
+            upbcorr_image = ureconvolved_image.replace('_reconv.fits', '_pbcorr.fits')
             upbcorr_image = fm.fits_operation(ureconvolved_image, ureproj_arr, operation='/', out=upbcorr_image)
         # cropping
             qcropped_image = qimg.replace('.fits', '_mos.fits')
@@ -251,7 +264,7 @@ class polarisation_mosaic:
         pyfits.writeto(self.polmosaicdir + '/' + str(utg).upper() + '_' + str(sb).zfill(2) + '_U.fits', data=uarray,
                      header=uhdr, overwrite=True)
 
-        utils.clean_polmosaic_tmp_data(self)
+        utils.clean_polmosaic_tmp_data(self, sb)
 
 
     def make_polcubes(self):
@@ -263,8 +276,8 @@ class polarisation_mosaic:
         utils.set_mosdirs(self)
 
         # Get the fits files
-        Qmoss = sorted(glob.glob(self.polmosaicdir + '/*_Q.fits'))
-        Umoss = sorted(glob.glob(self.polmosaicdir + '/*_U.fits'))
+        Qmoss = sorted(glob.glob(self.polmosaicdir + '/*_[0-9][0-9]_Q.fits'))
+        Umoss = sorted(glob.glob(self.polmosaicdir + '/*_[0-9][0-9]_U.fits'))
 
         # Check if the same number of mosaics is available for Q and U
         Qmoss_chk = []
@@ -304,16 +317,6 @@ class polarisation_mosaic:
             hduref_hdr['FREQ'] = hdu_hdr['FREQ']
             repr_image = reproject_interp(hdu, hduref_hdr, return_footprint=False)
             pyfits.writeto(image.replace('.fits','_repr.fits'), repr_image, hduref_hdr, overwrite=True)
-
-        # Check for empty images and remove them
-        allremove = sorted(glob.glob(self.polmosaicdir + '/*_repr.fits'))
-        for image in allremove:
-            hdu = pyfits.open(image)[0]
-            hdu_data = hdu.data
-            if np.all(np.isnan(hdu_data)):
-                os.remove(image)
-            else:
-                continue
 
         # Generate a mask to limit the valid area for all images to the largest common valid one
         allreprims = sorted(glob.glob(self.polmosaicdir + '/*_repr.fits'))
@@ -383,3 +386,11 @@ class polarisation_mosaic:
                 coord_arr[b,1] = qcube_hdr['CRVAL1']
                 coord_arr[b,2] = qcube_hdr['CRVAL2']
         np.savetxt(self.polmosaicdir + '/pointings.txt', coord_arr, fmt=['%2s','%1.13e','%1.13e'], delimiter='\t')
+
+        # Remove obsolete files
+        os.system('rm -rf ' + self.polmosaicdir + '*_[0-9][0-9]_Q_mask.fits')
+        os.system('rm -rf ' + self.polmosaicdir + '*_[0-9][0-9]_U_mask.fits')
+        os.system('rm -rf ' + self.polmosaicdir + '*_[0-9][0-9]_Q_repr.fits')
+        os.system('rm -rf ' + self.polmosaicdir + '*_[0-9][0-9]_U_repr.fits')
+        os.system('rm -rf ' + self.polmosaicdir + '*_[0-9][0-9]_Q.fits')
+        os.system('rm -rf ' + self.polmosaicdir + '*_[0-9][0-9]_U.fits')
