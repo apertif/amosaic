@@ -262,7 +262,7 @@ def main(images, pbimages, reference=None, pbclip=0.1, output='mosaic.fits', log
         reconvolved_image = fits_reconvolve_psf(pbcorr_image, common_psf, out=reconvolved_image)
 # cropping
         cropped_image = os.path.basename(img.replace('.fits', '_mos.fits'))
-        cropped_image, cutout = fits_crop(pbcorr_image, out=cropped_image)
+        cropped_image, cutout = fits_crop(reconvolved_image, out=cropped_image)
         corrimages.append(cropped_image)
 # primary beam weights
         wg_arr = pbarray - pbclip # the edges weight ~0
