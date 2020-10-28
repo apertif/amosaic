@@ -235,13 +235,13 @@ def copy_polbeams(self):
         hdul.close()
 
     # Copy the beam models with the right frequency over to the working directory
-    for beam in range(40):
+    for b in range(40):
         for sb in range(24):
             if os.path.isfile(self.polimagedir + '/Q_B' + str(b).zfill(2) + '_SB' + str(sb).zfill(2) + '.fits'):
                 hdulist = pyfits.open(self.polimagedir + '/Q_B' + str(b).zfill(2) + '_SB' + str(sb).zfill(2) + '.fits')
                 freq = hdulist[0].header['CRVAL3']
                 nchann = np.argmin(np.abs(freqs - freq)) + 1
-                os.system('cp ' + os.path.join(rightbeamdir, 'beam_models/chann_' + str(nchann) + '/') + rightbeamdir.split('/')[-1] + '_' + str(beam).zfill(2) + '_I_model.fits ' + self.polbeamdir + '/PB_B' + str(beam).zfill(2) + '_SB' + str(sb).zfill(2) + '.fits')
+                os.system('cp ' + os.path.join(rightbeamdir, 'beam_models/chann_' + str(nchann) + '/') + rightbeamdir.split('/')[-1] + '_' + str(b).zfill(2) + '_I_model.fits ' + self.polbeamdir + '/PB_B' + str(b).zfill(2) + '_SB' + str(sb).zfill(2) + '.fits')
 
 
 def get_polfiles(self, sb):
