@@ -259,13 +259,13 @@ def main(images, pbimages, reference=None, pbclip=0.1, output='mosaic.fits', log
 # PB correction
         pbcorr_image = os.path.basename(img.replace('.fits', '_pbcorr.fits'))
         pbcorr_image, pbarray = pbcorrect(img, pb, pbclip=pbclip, out=pbcorr_image)
-# convolution with common psf
-        reconvolved_image = os.path.basename(pbcorr_image.replace('.fits', '_reconv.fits'))
-        reconvolved_image = fits_reconvolve_psf(pbcorr_image, common_psf, out=reconvolved_image)
 # cropping
-        cropped_image = os.path.basename(img.replace('.fits', '_mos.fits'))
-        cropped_image, cutout = fits_crop(reconvolved_image, out=cropped_image)
-        corrimages.append(cropped_image)
+        cropped_image = os.path.basename(img.replace('.fits', '_tmp.fits'))
+        cropped_image, cutout = fits_crop(pbcorr_image, out=cropped_image)
+# convolution with common psf
+        reconvolved_image = os.path.basename(cropped_image.replace('.fits', '_mos.fits'))
+        reconvolved_image = fits_reconvolve_psf(cropped_image, common_psf, out=reconvolved_image)
+        corrimages.append(reconvolved_image)
 # primary beam weights
         wg_arr = pbarray - pbclip # the edges weight ~0
         wg_arr[np.isnan(wg_arr)] = 0 # the NaNs weight 0
