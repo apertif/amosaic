@@ -19,7 +19,7 @@ from astropy.time import Time
 from astropy.io import fits
 from astropy.coordinates import Angle
 from astropy.coordinates import SkyCoord
-from astropy.convolution import convolve
+from astropy.convolution import convolve, convolve_fft
 from astropy.nddata import Cutout2D
 from astropy.wcs import WCS
 import argparse
@@ -34,7 +34,7 @@ import logging
 
 
 def clean_mosaic_tmp_data(path='.'):
-    cmd = 'cd {path} && rm *_tmp.fits *_reconv.fits *_repr.fits *_pbcorr.fits'.format(path=path)
+    cmd = 'cd {path} && rm *_tmp.fits'.format(path=path)
     subprocess.call(cmd, shell=True)
 
 
@@ -133,13 +133,23 @@ def fits_reconvolve_psf(fitsfile, newpsf, out=None):
         if currentpsf != newpsf:
             kern = newpsf.deconvolve(currentpsf).as_kernel(pixscale=hdr['CDELT2']*u.deg)
             norm = newpsf.to_value() / currentpsf.to_value()
+
             if len(hdul[0].data.shape) == 4:
-                print(kern)
-                hdul[0].data[0,0,...] = norm * convolve(hdul[0].data[0,0,...], kern,
-                                                        boundary='fill', fill_value=np.nan)
-            else:
-                hdul[0].data = norm * convolve(hdul[0].data, kern,
-                                               boundary='fill', fill_value=np.nan)
+                conv_data = hdul[0].data[0,0,...]
+            elif len(hdul[0].data.shape) == 2:
+                conv_data = hdul[0].data
+
+            conv_data = norm * convolve_fft(conv_data, kern,
+                                                    boundary='fill',
+                                                    fill_value=np.nan,
+                                                    preserve_nan=True)
+
+            if len(hdul[0].data.shape) == 4:
+                hdul[0].data[0,0,...] = conv_data
+            elif len(hdul[0].data.shape) == 2:
+                hdul[0].data = conv_data
+
+
             hdr = newpsf.attach_to_header(hdr)
         fits.writeto(out, data=hdul[0].data, header=hdr, overwrite=True)
     return out
@@ -217,7 +227,7 @@ def fits_transpose(fitsfile):
 
 
 
-def pbcorrect(image, pbimage, pbclip=None, out=None):
+def pbcorrect(image, pbimage, pbclip=None, rmnoise=False, out=None):
     tmpimg = make_tmp_copy(image)
     tmppb = make_tmp_copy(pbimage)
     tmpimg = fits_squeeze(tmpimg) # remove extra dimentions
@@ -225,24 +235,41 @@ def pbcorrect(image, pbimage, pbclip=None, out=None):
     tmppb = fits_squeeze(tmppb) # remove extra dimentions
     with fits.open(tmpimg) as f:
         imheader = f[0].header
+        imdata = f[0].data
     with fits.open(tmppb) as f:
         pbhdu = f[0]
-        autoclip = np.nanmin(f[0].data)
+        # autoclip = np.nanmin(f[0].data)
 # reproject
         reproj_arr, reproj_footprint = reproject_interp(pbhdu, imheader)
-    pbclip = pbclip or autoclip
     reproj_arr = np.float32(reproj_arr)
-    reproj_arr[reproj_arr < pbclip] = np.nan
-    logging.info('PB is clipped at %f level', pbclip)
-    pb_regr_repr = os.path.basename(tmppb.replace('.fits', '_repr.fits'))
+    if pbclip is not None:
+    # pbclip = pbclip or autoclip
+        reproj_arr[reproj_arr < pbclip] = np.nan
+        logging.info('PB is clipped at %f level', pbclip)
+    pb_regr_repr = os.path.basename(tmppb.replace('_tmp.fits', '_repr_tmp.fits'))
     fits.writeto(pb_regr_repr, reproj_arr, imheader, overwrite=True)
     if out is None:
         out = os.path.basename(image.replace('.fits', '_pbcorr.fits'))
-    out = fits_operation(tmpimg, reproj_arr, operation='/', out=out)
+
+    if not rmnoise:
+        out = fits_operation(tmpimg, reproj_arr, operation='/', out=out)
+    else:
+        l, m = imdata.shape[0]//4,  imdata.shape[1]//4
+        mask = np.ones(imdata.shape, dtype=np.bool)
+        mask[l:-l,m:-m] = False
+        img_rms = np.nanstd(imdata[mask])
+        bfac = 3.0
+        data = imdata - img_rms * bfac
+        data[data<0] = 0.0
+        data = data / reproj_arr
+        noise = np.random.randn(imdata.shape[0], imdata.shape[1]) * img_rms * bfac
+        data += noise
+        fits.writeto(out, data=data, header=imheader, overwrite=True)
     return out, reproj_arr
 
 
-def main(images, pbimages, reference=None, pbclip=0.1, output='mosaic.fits', logger=None):
+def main(images, pbimages, reference=None, pbclip=0.1, output='mosaic.fits',
+         clean_temporary_files=True, rmnoise=False, logger=None):
     if logger is None:
         logger = logging.getLogger('amos')
     common_psf = get_common_psf(images)
@@ -257,17 +284,18 @@ def main(images, pbimages, reference=None, pbclip=0.1, output='mosaic.fits', log
 # prepare the images (squeeze, transfer_coordinates, reproject, regrid pbeam, correct...)
 
 # PB correction
-        pbcorr_image = os.path.basename(img.replace('.fits', '_pbcorr.fits'))
-        pbcorr_image, pbarray = pbcorrect(img, pb, pbclip=pbclip, out=pbcorr_image)
+        pbcorr_image = os.path.basename(img.replace('.fits', '_pbcorr_tmp.fits'))
+        pbcorr_image, pbarray = pbcorrect(img, pb, pbclip=pbclip,
+                                          rmnoise=rmnoise, out=pbcorr_image)
 # cropping
-        cropped_image = os.path.basename(img.replace('.fits', '_tmp.fits'))
+        cropped_image = os.path.basename(img.replace('.fits', '_crp_tmp.fits'))
         cropped_image, cutout = fits_crop(pbcorr_image, out=cropped_image)
 # convolution with common psf
-        reconvolved_image = os.path.basename(cropped_image.replace('.fits', '_mos.fits'))
+        reconvolved_image = os.path.basename(img.replace('.fits', '_mos.fits'))
         reconvolved_image = fits_reconvolve_psf(cropped_image, common_psf, out=reconvolved_image)
         corrimages.append(reconvolved_image)
 # primary beam weights
-        wg_arr = pbarray - pbclip # the edges weight ~0
+        wg_arr = pbarray #
         wg_arr[np.isnan(wg_arr)] = 0 # the NaNs weight 0
         wg_arr = wg_arr**2 / np.nanmax(wg_arr**2) # normalize
         wcut = Cutout2D(wg_arr, cutout.input_position_original, cutout.shape)
@@ -305,8 +333,9 @@ def main(images, pbimages, reference=None, pbclip=0.1, output='mosaic.fits', log
     fits.writeto(output, data=array,
                  header=hdr, overwrite=True)
     logging.info('Wrote %s', output)
-    logging.debug('Cleaning directory')
-    clean_mosaic_tmp_data('.')
+    if clean_temporary_files:
+        logging.debug('Cleaning directory')
+        clean_mosaic_tmp_data('.')
 
 
 if __name__ == "__main__":
