@@ -25,11 +25,14 @@ from astropy.wcs import WCS
 import argparse
 
 from radio_beam import Beam, Beams
+from radio_beam import EllipticalGaussian2DKernel
 
 from reproject import reproject_interp
 from reproject.mosaicking import reproject_and_coadd, find_optimal_celestial_wcs
 
 import logging
+
+from scipy.fft import fft2, fftshift, ifft2, ifftshift
 
 
 
@@ -121,6 +124,41 @@ def fits_operation(fitsfile, other, operation='-', out=None):
     return out
 
 
+def convolve_gaussian_kernel(img, bmaj, bmin, bpa):
+    """
+    convolve image with a gaussian kernel without FFTing it
+    bmaj, bmin -- in pixels,
+    bpa -- in radians.
+    NOTE: yet works for square image without NaNs
+    """
+    n = len(img)
+    fmaj = n / bmin / 2 / np.pi
+    fmin = n / bmaj / 2 / np.pi
+    fpa = bpa + np.pi/2
+
+    imean = img.mean()
+    img -= imean
+    # coef  = 2*np.pi*bmaj*bmin  # -- is it needed?
+    fkern = EllipticalGaussian2DKernel(fmaj, fmin, fpa,
+                                    x_size=img.shape[1],
+                                    y_size=img.shape[0])
+    fkern.normalize('peak')
+    fkern = fkern.array
+    fimg = np.fft.fft2(img)
+    fconv = fimg * ifftshift(fkern)
+    return ifft2(fconv).real + imean
+
+# test it:
+# import matplotlib.pyplot as plt
+# img = 1e-5*np.random.randn(1001,1001)
+# img[500,500] = 5.0
+# img[100,400] = 1.0
+# a = convolve_gaussian_kernel(img, 2.7, 1.3, np.pi/4)
+# plt.imshow(a); plt.colorbar()
+# print(a.sum(), a.max())
+# sys.exit()
+
+
 def fits_reconvolve_psf(fitsfile, newpsf, out=None):
     """ Convolve image with deconvolution of (newpsf, oldpsf) """
     newparams = newpsf.to_header_keywords()
@@ -131,25 +169,31 @@ def fits_reconvolve_psf(fitsfile, newpsf, out=None):
         hdr = hdul[0].header
         currentpsf = Beam.from_fits_header(hdr)
         if currentpsf != newpsf:
-            kern = newpsf.deconvolve(currentpsf).as_kernel(pixscale=hdr['CDELT2']*u.deg)
-            norm = newpsf.to_value() / currentpsf.to_value()
+            kpsf = newpsf.deconvolve(currentpsf)
+            kern = kpsf.as_kernel(pixscale=hdr['CDELT2']*u.deg)
+            kmaj = (kpsf.major.to('deg').value/hdr['CDELT2'])
+            kmin = (kpsf.minor.to('deg').value/hdr['CDELT2'])
+            kpa = kpsf.pa.value
+            print(kmaj, kmin, kpa)
+            # kern_fft = Beam(major=1/kmin, minor=1/kmaj, pa=kpa)
 
+            norm = newpsf.to_value() / currentpsf.to_value()
+            print(norm)
             if len(hdul[0].data.shape) == 4:
                 conv_data = hdul[0].data[0,0,...]
             elif len(hdul[0].data.shape) == 2:
                 conv_data = hdul[0].data
 
-            conv_data = norm * convolve_fft(conv_data, kern,
-                                                    boundary='fill',
-                                                    fill_value=np.nan,
-                                                    preserve_nan=True)
+            conv_data = norm * convolve_gaussian_kernel(conv_data, kmaj, kmin, kpa)
+            # conv_data = norm * convolve_fft(conv_data, kern,
+            #                                         boundary='fill',
+            #                                         fill_value=np.nan,
+            #                                         preserve_nan=True)
 
             if len(hdul[0].data.shape) == 4:
                 hdul[0].data[0,0,...] = conv_data
             elif len(hdul[0].data.shape) == 2:
                 hdul[0].data = conv_data
-
-
             hdr = newpsf.attach_to_header(hdr)
         fits.writeto(out, data=hdul[0].data, header=hdr, overwrite=True)
     return out
@@ -283,17 +327,20 @@ def main(images, pbimages, reference=None, pbclip=0.1, output='mosaic.fits',
         logger.info('PBeam: %s', pb)
 # prepare the images (squeeze, transfer_coordinates, reproject, regrid pbeam, correct...)
 
+# convolution with common psf
+        reconvolved_image = os.path.basename(img.replace('.fits', '_reconv_tmp.fits'))
+        reconvolved_image = fits_reconvolve_psf(img, common_psf, out=reconvolved_image)
+
 # PB correction
         pbcorr_image = os.path.basename(img.replace('.fits', '_pbcorr_tmp.fits'))
-        pbcorr_image, pbarray = pbcorrect(img, pb, pbclip=pbclip,
+        pbcorr_image, pbarray = pbcorrect(reconvolved_image, pb, pbclip=pbclip,
                                           rmnoise=rmnoise, out=pbcorr_image)
+
 # cropping
-        cropped_image = os.path.basename(img.replace('.fits', '_crp_tmp.fits'))
+        cropped_image = os.path.basename(img.replace('.fits', '_mos.fits'))
         cropped_image, cutout = fits_crop(pbcorr_image, out=cropped_image)
-# convolution with common psf
-        reconvolved_image = os.path.basename(img.replace('.fits', '_mos.fits'))
-        reconvolved_image = fits_reconvolve_psf(cropped_image, common_psf, out=reconvolved_image)
-        corrimages.append(reconvolved_image)
+
+        corrimages.append(cropped_image)
 # primary beam weights
         wg_arr = pbarray #
         wg_arr[np.isnan(wg_arr)] = 0 # the NaNs weight 0
