@@ -174,7 +174,7 @@ def fits_reconvolve_psf(fitsfile, newpsf, out=None):
             kern = kpsf.as_kernel(pixscale=hdr['CDELT2']*u.deg)
             kmaj = (kpsf.major.to('deg').value/hdr['CDELT2'])
             kmin = (kpsf.minor.to('deg').value/hdr['CDELT2'])
-            kpa = np.deg2rad(kpsf.pa.value)
+            kpa = kpsf.pa.value
             print(kmaj, kmin, kpa)
             # kern_fft = Beam(major=1/kmin, minor=1/kmaj, pa=kpa)
 
