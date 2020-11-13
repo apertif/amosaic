@@ -131,18 +131,21 @@ def convolve_gaussian_kernel(img, bmaj, bmin, bpa):
     bpa -- in degrees from top clockwise (like in Beam)
     NOTE: yet works for square image without NaNs
     """
+    # Do we need:
+    SIGMA_TO_FWHM = np.sqrt(8*np.log(2))
+
     n = len(img)
-    fmaj = n / bmin / 2 / np.pi
-    fmin = n / bmaj / 2 / np.pi
+    fmaj = n / (bmin / SIGMA_TO_FWHM) / 2 / np.pi
+    fmin = n / (bmaj / SIGMA_TO_FWHM) / 2 / np.pi
     fpa = bpa + 90
 
     imean = img.mean()
     img -= imean
-    # coef  = 2*np.pi*bmaj*bmin  # -- is it needed?
 
-    fkern = Beam(fmaj*u.deg, fmin*u.deg, fpa*u.deg).as_kernel(1.0*u.deg,
-                                                              x_size=img.shape[1],
-                                                              y_size=img.shape[0])
+    angle = np.deg2rad(90+fpa)
+    fkern = EllipticalGaussian2DKernel(fmaj, fmin, angle,
+                                        x_size=img.shape[1],
+                                        y_size=img.shape[0])
     fkern.normalize('peak')
     fkern = fkern.array
     fimg = np.fft.fft2(img)
@@ -152,11 +155,16 @@ def convolve_gaussian_kernel(img, bmaj, bmin, bpa):
 # test it:
 # import matplotlib.pyplot as plt
 # img = 1e-5*np.random.randn(1001,1001)
-# img[500,500] = 5.0
-# img[100,400] = 1.0
-# a = convolve_gaussian_kernel(img, 1.7, 0.3, 30)
+# img[500,500] = 100.0
+# # img[100,400] = 1.0
+# s1 = 7
+# s2 = 2
+# a = convolve_gaussian_kernel(img, s1, s2, 10)
 # plt.imshow(a); plt.colorbar()
 # print(a.sum(), a.max())
+# # check that Peak flux is correct:
+# SIGMA_TO_FWHM = np.sqrt(8*np.log(2))
+# print(a.sum()/(2*np.pi*s1*s2)*SIGMA_TO_FWHM**2)
 # sys.exit()
 
 
