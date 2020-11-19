@@ -124,48 +124,33 @@ def fits_operation(fitsfile, other, operation='-', out=None):
     return out
 
 
-def convolve_gaussian_kernel(img, bmaj, bmin, bpa):
+def fft_psf(bmaj, bmin, bpa, size=3073):
+    SIGMA_TO_FWHM = np.sqrt(8*np.log(2))
+    fmaj = size / (bmin / SIGMA_TO_FWHM) / 2 / np.pi
+    fmin = size / (bmaj / SIGMA_TO_FWHM) / 2 / np.pi
+    fpa = bpa + 90
+    angle = np.deg2rad(90+fpa)
+    fkern = EllipticalGaussian2DKernel(fmaj, fmin, angle, x_size=size, y_size=size)
+    fkern.normalize('peak')
+    fkern = fkern.array
+    return fkern
+
+
+def reconvolve_gaussian_kernel(img, old_maj, old_min, old_pa, new_maj, new_min, new_pa):
     """
     convolve image with a gaussian kernel without FFTing it
     bmaj, bmin -- in pixels,
     bpa -- in degrees from top clockwise (like in Beam)
+    inverse -- use True to deconvolve.
     NOTE: yet works for square image without NaNs
     """
-    # Do we need:
-    SIGMA_TO_FWHM = np.sqrt(8*np.log(2))
-
-    n = len(img)
-    fmaj = n / (bmin / SIGMA_TO_FWHM) / 2 / np.pi
-    fmin = n / (bmaj / SIGMA_TO_FWHM) / 2 / np.pi
-    fpa = bpa + 90
-
+    size = len(img)
     imean = img.mean()
     img -= imean
-
-    angle = np.deg2rad(90+fpa)
-    fkern = EllipticalGaussian2DKernel(fmaj, fmin, angle,
-                                        x_size=img.shape[1],
-                                        y_size=img.shape[0])
-    fkern.normalize('peak')
-    fkern = fkern.array
     fimg = np.fft.fft2(img)
-    fconv = fimg * ifftshift(fkern)
+    krel = fft_psf(new_maj, new_min, new_pa, size) / fft_psf(old_maj, old_min, old_pa, size)
+    fconv = fimg * ifftshift(krel)
     return ifft2(fconv).real + imean
-
-# test it:
-# import matplotlib.pyplot as plt
-# img = 1e-5*np.random.randn(1001,1001)
-# img[500,500] = 100.0
-# # img[100,400] = 1.0
-# s1 = 7
-# s2 = 2
-# a = convolve_gaussian_kernel(img, s1, s2, 10)
-# plt.imshow(a); plt.colorbar()
-# print(a.sum(), a.max())
-# # check that Peak flux is correct:
-# SIGMA_TO_FWHM = np.sqrt(8*np.log(2))
-# print(a.sum()/(2*np.pi*s1*s2)*SIGMA_TO_FWHM**2)
-# sys.exit()
 
 
 def fits_reconvolve_psf(fitsfile, newpsf, out=None):
@@ -178,26 +163,22 @@ def fits_reconvolve_psf(fitsfile, newpsf, out=None):
         hdr = hdul[0].header
         currentpsf = Beam.from_fits_header(hdr)
         if currentpsf != newpsf:
-            kpsf = newpsf.deconvolve(currentpsf)
-            kern = kpsf.as_kernel(pixscale=hdr['CDELT2']*u.deg)
-            kmaj = (kpsf.major.to('deg').value/hdr['CDELT2'])
-            kmin = (kpsf.minor.to('deg').value/hdr['CDELT2'])
-            kpa = kpsf.pa.value
-            print(kmaj, kmin, kpa)
-            # kern_fft = Beam(major=1/kmin, minor=1/kmaj, pa=kpa)
-
+            kmaj1 = (currentpsf.major.to('deg').value/hdr['CDELT2'])
+            kmin1 = (currentpsf.minor.to('deg').value/hdr['CDELT2'])
+            kpa1 = currentpsf.pa.value
+            kmaj2 = (newpsf.major.to('deg').value/hdr['CDELT2'])
+            kmin2 = (newpsf.minor.to('deg').value/hdr['CDELT2'])
+            kpa2 = newpsf.pa.value
             norm = newpsf.to_value() / currentpsf.to_value()
-            print(norm)
             if len(hdul[0].data.shape) == 4:
                 conv_data = hdul[0].data[0,0,...]
             elif len(hdul[0].data.shape) == 2:
                 conv_data = hdul[0].data
-
-            conv_data = norm * convolve_gaussian_kernel(conv_data, kmaj, kmin, kpa)
-            # conv_data = norm * convolve_fft(conv_data, kern,
-            #                                         boundary='fill',
-            #                                         fill_value=np.nan,
-            #                                         preserve_nan=True)
+            # deconvolve with the old PSF
+            # conv_data = convolve_gaussian_kernel(conv_data, kmaj1, kmin1, kpa1, inverse=True)
+            # convolve to the new PSF
+            conv_data = norm * reconvolve_gaussian_kernel(conv_data, kmaj1, kmin1, kpa1,
+                                                                     kmaj2, kmin2, kpa2)
 
             if len(hdul[0].data.shape) == 4:
                 hdul[0].data[0,0,...] = conv_data
@@ -385,6 +366,10 @@ def main(images, pbimages, reference=None, pbclip=0.1, output='mosaic.fits',
     hdr.insert('RADESYS', ('BMAJ', psf['BMAJ']))
     hdr.insert('RADESYS', ('BMIN', psf['BMIN']))
     hdr.insert('RADESYS', ('BPA', psf['BPA']))
+
+# insert units to header:
+    hdr.insert('RADESYS', ('BUNIT', 'JY/BEAM'))
+
 
     fits.writeto(output, data=array,
                  header=hdr, overwrite=True)
