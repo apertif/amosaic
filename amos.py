@@ -72,7 +72,6 @@ def fits_squeeze(fitsfile, out=None):
     if out is None:
         logging.debug('fits_squeeze: Overwriting file %s', fitsfile)
         out = fitsfile
-
     with fits.open(fitsfile) as hdul:
         data = np.squeeze(hdul[0].data)
         header = hdul[0].header
@@ -101,7 +100,6 @@ def fits_operation(fitsfile, other, operation='-', out=None):
     if out is None:
         logging.debug('fits_operation: Overwriting file %s', fitsfile)
         out = fitsfile
-
     if isinstance(other, str):
         other_data = fits.getdata(other)
     elif isinstance(other, np.ndarray) or isinstance(other, np.float):
@@ -165,10 +163,10 @@ def fits_reconvolve_psf(fitsfile, newpsf, out=None):
         if currentpsf != newpsf:
             kmaj1 = (currentpsf.major.to('deg').value/hdr['CDELT2'])
             kmin1 = (currentpsf.minor.to('deg').value/hdr['CDELT2'])
-            kpa1 = currentpsf.pa.value
+            kpa1 = currentpsf.pa.to('deg').value
             kmaj2 = (newpsf.major.to('deg').value/hdr['CDELT2'])
             kmin2 = (newpsf.minor.to('deg').value/hdr['CDELT2'])
-            kpa2 = newpsf.pa.value
+            kpa2 = newpsf.pa.to('deg').value
             norm = newpsf.to_value() / currentpsf.to_value()
             if len(hdul[0].data.shape) == 4:
                 conv_data = hdul[0].data[0,0,...]
@@ -325,7 +323,6 @@ def main(images, pbimages, reference=None, pbclip=0.1, output='mosaic.fits',
         pbcorr_image = os.path.basename(img.replace('.fits', '_pbcorr_tmp.fits'))
         pbcorr_image, pbarray = pbcorrect(reconvolved_image, pb, pbclip=pbclip,
                                           rmnoise=rmnoise, out=pbcorr_image)
-
 # cropping
         cropped_image = os.path.basename(img.replace('.fits', '_mos.fits'))
         cropped_image, cutout = fits_crop(pbcorr_image, out=cropped_image)
@@ -381,7 +378,7 @@ def main(images, pbimages, reference=None, pbclip=0.1, output='mosaic.fits',
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-    print("MOSAIC tool")
+    logging.info("MOSAIC tool")
     parser = argparse.ArgumentParser(description='Mosaic fits images with primary beam correction and weighting')
     parser.add_argument('-g', '--glob', default='', help='Use glob on the directory. DANGEROUS')
     parser.add_argument('-i', '--images', nargs='+')
