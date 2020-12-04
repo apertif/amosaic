@@ -262,17 +262,20 @@ def pbcorrect(image, pbimage, pbclip=None, out=None, save_pb_fits=False, rmnoise
     """
     divide an image (fits file) by pbimage (fits or array)
     """
+
     with fits.open(image) as f:
         imheader = f[0].header
         imdata = f[0].data
     if isinstance(pbimage, str):
-        with fits.open(pbimage) as f:
+        tmppb = make_tmp_copy(pbimage)
+        tmppb = fits_transfer_coordinates(image, tmppb) # transfer_coordinates
+        with fits.open(tmppb) as f:
             pbhdu = f[0]
             if f[0].data.shape == imdata.shape:
                 pbarray = f[0].data
             else:
                 logging.info('Regridding pbeam into image shape')
-                # print(pbhdu.header[:10], imheader[:10])
+                print(f[0].data.shape, imdata.shape)
                 pbarray, reproj_footprint = reproject_interp(pbhdu, imheader)
     elif isinstance(pbimage, np.ndarray):
         pbarray = pbimage
@@ -333,7 +336,7 @@ def main(images, pbimages, reference=None, pbclip=0.1, outpath='.', output='mosa
 # convolution with common psf
         reconvolved_image = os.path.join(outpath, imgname.replace('.fits', '_reconv_tmp.fits'))
         logger.debug('Reconvolved image: %s', reconvolved_image)
-        reconvolved_image = fits_reconvolve_psf(img, common_psf, out=reconvolved_image)
+        reconvolved_image = fits_reconvolve_psf(tmp_img, common_psf, out=reconvolved_image)
 
 # PB correction
         pbcorr_image = os.path.join(outpath, imgname.replace('.fits', '_pbcorr_tmp.fits'))
