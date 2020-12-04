@@ -272,12 +272,13 @@ def pbcorrect(image, pbimage, pbclip=None, out=None, save_pb_fits=False, rmnoise
                 pbarray = f[0].data
             else:
                 logging.info('Regridding pbeam into image shape')
+                # print(pbhdu.header[:10], imheader[:10])
                 pbarray, reproj_footprint = reproject_interp(pbhdu, imheader)
     elif isinstance(pbimage, np.ndarray):
         pbarray = pbimage
 # reproject
     if pbclip is not None:
-        imdata[pbarray < pbclip] = np.nan
+        # imdata[pbarray < pbclip] = np.nan
         pbarray[pbarray < pbclip] = np.nan
         logging.info('PB is clipped at %f level', pbclip)
     if save_pb_fits:
@@ -303,7 +304,7 @@ def pbcorrect(image, pbimage, pbclip=None, out=None, save_pb_fits=False, rmnoise
         noise = np.random.randn(imdata.shape[0], imdata.shape[1]) * img_rms * bfac
         data += noise
         fits.writeto(out, data=data, header=imheader, overwrite=True)
-    return out
+    return out, pbarray
 
 
 
@@ -325,22 +326,23 @@ def main(images, pbimages, reference=None, pbclip=0.1, outpath='.', output='mosa
         imgpath, imgname = os.path.split(img)
         logger.info('Image: %s', img)
         logger.info('PBeam: %s', pb)
-        pbarray = fits.getdata(pb)
 # prepare the images (squeeze, transfer_coordinates, reproject, regrid pbeam, correct...)
-
+        logger.debug('Squeezing FITS')
+        tmp_img = fits_squeeze(img, out=os.path.join(outpath, imgname.replace('.fits','_tmp.fits')))
+        logger.debug('Squeezed fits: %s', tmp_img)
 # convolution with common psf
         reconvolved_image = os.path.join(outpath, imgname.replace('.fits', '_reconv_tmp.fits'))
-        logging.debug('Reconvolved image: %s', reconvolved_image)
+        logger.debug('Reconvolved image: %s', reconvolved_image)
         reconvolved_image = fits_reconvolve_psf(img, common_psf, out=reconvolved_image)
 
 # PB correction
         pbcorr_image = os.path.join(outpath, imgname.replace('.fits', '_pbcorr_tmp.fits'))
-        logging.debug('PB-corrected image: %s', pbcorr_image)
-        pbcorr_image = pbcorrect(reconvolved_image, pbarray, pbclip=pbclip,
+        logger.debug('PB-corrected image: %s', pbcorr_image)
+        pbcorr_image, pbarray = pbcorrect(reconvolved_image, pb, pbclip=pbclip,
                                           rmnoise=rmnoise, out=pbcorr_image)
 # cropping
         cropped_image = os.path.join(outpath, imgname.replace('.fits', '_mos.fits'))
-        logging.debug('Cropped image: %s', cropped_image)
+        logger.debug('Cropped image: %s', cropped_image)
         cropped_image, cutout = fits_crop(pbcorr_image, out=cropped_image)
 
         corrimages.append(cropped_image)
@@ -386,9 +388,9 @@ def main(images, pbimages, reference=None, pbclip=0.1, outpath='.', output='mosa
 
     fits.writeto(os.path.join(outpath, output), data=array,
                  header=hdr, overwrite=True)
-    logging.info('Wrote %s', output)
+    logger.info('Wrote %s', output)
     if clean_temporary_files:
-        logging.debug('Cleaning directory')
+        logger.debug('Cleaning directory')
         clean_mosaic_tmp_data('.')
 
 
