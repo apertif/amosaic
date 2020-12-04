@@ -258,33 +258,39 @@ def fits_transpose(fitsfile):
     return fitsfile
 
 
-
-def pbcorrect(image, pbimage, pbclip=None, rmnoise=False, out=None):
-    tmpimg = make_tmp_copy(image)
-    tmppb = make_tmp_copy(pbimage)
-    tmpimg = fits_squeeze(tmpimg) # remove extra dimentions
-    tmppb = fits_transfer_coordinates(tmpimg, tmppb) # transfer_coordinates
-    tmppb = fits_squeeze(tmppb) # remove extra dimentions
-    with fits.open(tmpimg) as f:
+def pbcorrect(image, pbimage, pbclip=None, out=None, save_pb_fits=False, rmnoise=False):
+    """
+    divide an image (fits file) by pbimage (fits or array)
+    """
+    with fits.open(image) as f:
         imheader = f[0].header
         imdata = f[0].data
-    with fits.open(tmppb) as f:
-        pbhdu = f[0]
-        # autoclip = np.nanmin(f[0].data)
+    if isinstance(pbimage, str):
+        with fits.open(pbimage) as f:
+            pbhdu = f[0]
+            if f[0].data.shape == imdata.shape:
+                pbarray = f[0].data
+            else:
+                logging.info('Regridding pbeam into image shape')
+                pbarray, reproj_footprint = reproject_interp(pbhdu, imheader)
+    elif isinstance(pbimage, np.ndarray):
+        pbarray = pbimage
 # reproject
-        reproj_arr, reproj_footprint = reproject_interp(pbhdu, imheader)
-    reproj_arr = np.float32(reproj_arr)
     if pbclip is not None:
-    # pbclip = pbclip or autoclip
-        reproj_arr[reproj_arr < pbclip] = np.nan
+        imdata[pbarray < pbclip] = np.nan
+        pbarray[pbarray < pbclip] = np.nan
         logging.info('PB is clipped at %f level', pbclip)
-    pb_regr_repr = os.path.basename(tmppb.replace('_tmp.fits', '_repr_tmp.fits'))
-    fits.writeto(pb_regr_repr, reproj_arr, imheader, overwrite=True)
+    if save_pb_fits:
+        pb_regr_repr = os.path.basename(image).replace('.fits', '_pb_regr.fits')
+        fits.writeto(pb_regr_repr, pbarray, imheader.remove('HISTORY', remove_all=True),
+                     overwrite=True)
+
     if out is None:
         out = os.path.basename(image.replace('.fits', '_pbcorr.fits'))
 
+    imheader.add_history('PB corrected')
     if not rmnoise:
-        out = fits_operation(tmpimg, reproj_arr, operation='/', out=out)
+        fits.writeto(out, data=imdata/pbarray, header=imheader, overwrite=True)
     else:
         l, m = imdata.shape[0]//4,  imdata.shape[1]//4
         mask = np.ones(imdata.shape, dtype=np.bool)
@@ -293,15 +299,20 @@ def pbcorrect(image, pbimage, pbclip=None, rmnoise=False, out=None):
         bfac = 3.0
         data = imdata - img_rms * bfac
         data[data<0] = 0.0
-        data = data / reproj_arr
+        data = data / pbarray
         noise = np.random.randn(imdata.shape[0], imdata.shape[1]) * img_rms * bfac
         data += noise
         fits.writeto(out, data=data, header=imheader, overwrite=True)
-    return out, reproj_arr
+    return out
 
 
-def main(images, pbimages, reference=None, pbclip=0.1, output='mosaic.fits',
+
+def main(images, pbimages, reference=None, pbclip=0.1, outpath='.', output='mosaic.fits',
          clean_temporary_files=True, rmnoise=False, logger=None):
+
+    # if outpath is None:
+        # outpath = '.'
+
     if logger is None:
         logger = logging.getLogger('amos')
     common_psf = get_common_psf(images)
@@ -311,20 +322,25 @@ def main(images, pbimages, reference=None, pbclip=0.1, output='mosaic.fits',
     rmsweights = [] # of the images themself
     # weight_images = []
     for img, pb in zip(images, pbimages):
+        imgpath, imgname = os.path.split(img)
         logger.info('Image: %s', img)
         logger.info('PBeam: %s', pb)
+        pbarray = fits.getdata(pb)
 # prepare the images (squeeze, transfer_coordinates, reproject, regrid pbeam, correct...)
 
 # convolution with common psf
-        reconvolved_image = os.path.basename(img.replace('.fits', '_reconv_tmp.fits'))
+        reconvolved_image = os.path.join(outpath, imgname.replace('.fits', '_reconv_tmp.fits'))
+        logging.debug('Reconvolved image: %s', reconvolved_image)
         reconvolved_image = fits_reconvolve_psf(img, common_psf, out=reconvolved_image)
 
 # PB correction
-        pbcorr_image = os.path.basename(img.replace('.fits', '_pbcorr_tmp.fits'))
-        pbcorr_image, pbarray = pbcorrect(reconvolved_image, pb, pbclip=pbclip,
+        pbcorr_image = os.path.join(outpath, imgname.replace('.fits', '_pbcorr_tmp.fits'))
+        logging.debug('PB-corrected image: %s', pbcorr_image)
+        pbcorr_image = pbcorrect(reconvolved_image, pbarray, pbclip=pbclip,
                                           rmnoise=rmnoise, out=pbcorr_image)
 # cropping
-        cropped_image = os.path.basename(img.replace('.fits', '_mos.fits'))
+        cropped_image = os.path.join(outpath, imgname.replace('.fits', '_mos.fits'))
+        logging.debug('Cropped image: %s', cropped_image)
         cropped_image, cutout = fits_crop(pbcorr_image, out=cropped_image)
 
         corrimages.append(cropped_image)
@@ -368,7 +384,7 @@ def main(images, pbimages, reference=None, pbclip=0.1, output='mosaic.fits',
     hdr.insert('RADESYS', ('BUNIT', 'JY/BEAM'))
 
 
-    fits.writeto(output, data=array,
+    fits.writeto(os.path.join(outpath, output), data=array,
                  header=hdr, overwrite=True)
     logging.info('Wrote %s', output)
     if clean_temporary_files:
