@@ -270,21 +270,24 @@ def pbcorrect(image, pbimage, pbclip=None, rmnoise=False, out=None):
         imdata = f[0].data
     with fits.open(tmppb) as f:
         pbhdu = f[0]
+        pbarray = f[0].data
+        if pbarray.shape != imdata.shape:
         # autoclip = np.nanmin(f[0].data)
 # reproject
-        reproj_arr, reproj_footprint = reproject_interp(pbhdu, imheader)
-    reproj_arr = np.float32(reproj_arr)
+            logging.info('Regridding pb-model')
+            pbarray, reproj_footprint = reproject_interp(pbhdu, imheader)
+    pbarray = np.float32(pbarray)
     if pbclip is not None:
     # pbclip = pbclip or autoclip
-        reproj_arr[reproj_arr < pbclip] = np.nan
+        pbarray[pbarray < pbclip] = np.nan
         logging.info('PB is clipped at %f level', pbclip)
     pb_regr_repr = os.path.basename(tmppb.replace('_tmp.fits', '_repr_tmp.fits'))
-    fits.writeto(pb_regr_repr, reproj_arr, imheader, overwrite=True)
+    fits.writeto(pb_regr_repr, pbarray, imheader, overwrite=True)
     if out is None:
         out = os.path.basename(image.replace('.fits', '_pbcorr.fits'))
 
     if not rmnoise:
-        out = fits_operation(tmpimg, reproj_arr, operation='/', out=out)
+        out = fits_operation(tmpimg, pbarray, operation='/', out=out)
     else:
         l, m = imdata.shape[0]//4,  imdata.shape[1]//4
         mask = np.ones(imdata.shape, dtype=np.bool)
@@ -293,11 +296,11 @@ def pbcorrect(image, pbimage, pbclip=None, rmnoise=False, out=None):
         bfac = 3.0
         data = imdata - img_rms * bfac
         data[data<0] = 0.0
-        data = data / reproj_arr
+        data = data / pbarray
         noise = np.random.randn(imdata.shape[0], imdata.shape[1]) * img_rms * bfac
         data += noise
         fits.writeto(out, data=data, header=imheader, overwrite=True)
-    return out, reproj_arr
+    return out, pbarray
 
 
 def main(images, pbimages, reference=None, pbclip=0.1, output='mosaic.fits',
