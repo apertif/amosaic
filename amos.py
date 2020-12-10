@@ -37,7 +37,8 @@ from scipy.fft import fft2, fftshift, ifft2, ifftshift
 
 
 def clean_mosaic_tmp_data(path='.'):
-    cmd = 'cd {path} && rm *_tmp.fits'.format(path=path)
+
+    cmd = 'cd {path} && rm *_tmp*.fits'.format(path=path)
     subprocess.call(cmd, shell=True)
 
 
@@ -276,31 +277,28 @@ def pbcorrect(image, pbimage, pbclip=None, rmnoise=False, out=None):
 # reproject
             logging.info('Regridding pb-model')
             pbarray, reproj_footprint = reproject_interp(pbhdu, imheader)
+        else:
+            logging.debug('PB has the same shape. No regridding needed.')
     pbarray = np.float32(pbarray)
     if pbclip is not None:
     # pbclip = pbclip or autoclip
         pbarray[pbarray < pbclip] = np.nan
         logging.info('PB is clipped at %f level', pbclip)
+    else:
+        logging.info('Not clipping PB array')
     pb_regr_repr = os.path.basename(tmppb.replace('_tmp.fits', '_repr_tmp.fits'))
     fits.writeto(pb_regr_repr, pbarray, imheader, overwrite=True)
     if out is None:
-        out = os.path.basename(image.replace('.fits', '_pbcorr.fits'))
-
-    if not rmnoise:
-        out = fits_operation(tmpimg, pbarray, operation='/', out=out)
+        img_corr = os.path.basename(image.replace('.fits', '_pbcorr.fits'))
+        img_uncorr = os.path.basename(image.replace('.fits', '_uncorr.fits'))
     else:
-        l, m = imdata.shape[0]//4,  imdata.shape[1]//4
-        mask = np.ones(imdata.shape, dtype=np.bool)
-        mask[l:-l,m:-m] = False
-        img_rms = np.nanstd(imdata[mask])
-        bfac = 3.0
-        data = imdata - img_rms * bfac
-        data[data<0] = 0.0
-        data = data / pbarray
-        noise = np.random.randn(imdata.shape[0], imdata.shape[1]) * img_rms * bfac
-        data += noise
-        fits.writeto(out, data=data, header=imheader, overwrite=True)
-    return out, pbarray
+        img_corr = out
+        img_uncorr = os.path.basename(image.replace('.fits', '_uncorr.fits'))
+
+    img_corr = fits_operation(tmpimg, pbarray, operation='/', out=img_corr)
+    img_uncorr = fits_operation(img_corr, pbarray, operation='*', out=img_uncorr)
+
+    return img_corr, img_uncorr, pbarray
 
 
 def main(images, pbimages, reference=None, pbclip=0.1, output='mosaic.fits',
@@ -310,6 +308,7 @@ def main(images, pbimages, reference=None, pbclip=0.1, output='mosaic.fits',
     common_psf = get_common_psf(images)
 
     corrimages = [] # to mosaic
+    uncorrimages = []
     pbweights = [] # of the pixels
     rmsweights = [] # of the images themself
     # weight_images = []
@@ -324,13 +323,17 @@ def main(images, pbimages, reference=None, pbclip=0.1, output='mosaic.fits',
 
 # PB correction
         pbcorr_image = os.path.basename(img.replace('.fits', '_pbcorr_tmp.fits'))
-        pbcorr_image, pbarray = pbcorrect(reconvolved_image, pb, pbclip=pbclip,
+        pbcorr_image, uncorr_image, pbarray = pbcorrect(reconvolved_image, pb, pbclip=pbclip,
                                           rmnoise=rmnoise, out=pbcorr_image)
 # cropping
         cropped_image = os.path.basename(img.replace('.fits', '_mos.fits'))
         cropped_image, cutout = fits_crop(pbcorr_image, out=cropped_image)
 
+        uncorr_cropped_image = os.path.basename(img.replace('.fits', '_uncorr.fits'))
+        uncorr_cropped_image, _ = fits_crop(uncorr_image, out=uncorr_cropped_image)
+
         corrimages.append(cropped_image)
+        uncorrimages.append(uncorr_cropped_image)
 # primary beam weights
         wg_arr = pbarray #
         wg_arr[np.isnan(wg_arr)] = 0 # the NaNs weight 0
@@ -338,24 +341,31 @@ def main(images, pbimages, reference=None, pbclip=0.1, output='mosaic.fits',
         wcut = Cutout2D(wg_arr, cutout.input_position_original, cutout.shape)
         pbweights.append(wcut.data)
 # weight the images by RMS noise over the edges
-        imdata = np.squeeze(fits.getdata(img))
-        l, m = imdata.shape[0]//10,  imdata.shape[1]//10
-        mask = np.ones(imdata.shape, dtype=np.bool)
-        mask[l:-l,m:-m] = False
-        img_noise = np.nanstd(imdata[mask])
-        img_weight = 1 / img_noise**2
-        rmsweights.append(img_weight)
+        # imdata = np.squeeze(fits.getdata(img))
+        # l, m = imdata.shape[0]//10,  imdata.shape[1]//10
+        # mask = np.ones(imdata.shape, dtype=np.bool)
+        # mask[l:-l,m:-m] = False
+        # img_noise = np.nanstd(imdata[mask])
+        # img_weight = 1 / img_noise**2
+        # rmsweights.append(img_weight)
 
 # merge the image rms weights and the primary beam pixel weights:
-    weights = [p*r/max(rmsweights) for p, r in zip(pbweights, rmsweights)]
+    # weights = [p*r/max(rmsweights) for p, r in zip(pbweights, rmsweights)]
 
 # create the wcs and footprint for output mosaic
+
+    logging.info('Mosaicing...')
     wcs_out, shape_out = find_optimal_celestial_wcs(corrimages, auto_rotate=False, reference=reference)
 
     array, footprint = reproject_and_coadd(corrimages, wcs_out, shape_out=shape_out,
                                             reproject_function=reproject_interp,
-                                            input_weights=weights)
+                                            input_weights=pbweights)
+    array2, _ = reproject_and_coadd(uncorrimages, wcs_out, shape_out=shape_out,
+                                            reproject_function=reproject_interp,
+                                            input_weights=pbweights)
+
     array = np.float32(array)
+    array2 = np.float32(array2)
 
     # plt.imshow(array)
 
@@ -373,6 +383,10 @@ def main(images, pbimages, reference=None, pbclip=0.1, output='mosaic.fits',
 
     fits.writeto(output, data=array,
                  header=hdr, overwrite=True)
+
+    fits.writeto(output.replace('.fits', '_uncorr.fits'), data=array2,
+                 header=hdr, overwrite=True)
+
     logging.info('Wrote %s', output)
     if clean_temporary_files:
         logging.debug('Cleaning directory')
