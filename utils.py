@@ -1,10 +1,13 @@
 import glob
 import os
 import sys
+import subprocess
+
 from configparser import ConfigParser
 
 import numpy as np
 import pandas as pd
+
 from astropy import units as u
 from astropy.io import ascii
 from astropy.io import fits as pyfits
@@ -72,6 +75,7 @@ def copy_contimages(self):
     """
     if self.cont_mode == 'all':
         # copy all the images from the continuum directory
+        print('Copying images for all available beams')
         for image in range(40):
             os.system('cp ' + os.path.join(self.basedir, self.obsid) + '/' + str(image).zfill(2) + '/continuum/image_mf_*.fits ' + self.contimagedir + '/I' + str(image).zfill(2) + '.fits')
     elif self.cont_mode == 'qa':
@@ -93,36 +97,66 @@ def copy_contimages(self):
         # Copy only the beams given as a list
         for image in self.cont_mode:
             os.system('cp ' + os.path.join(self.basedir, self.obsid) + '/' + str(image).zfill(2) + '/continuum/image_mf_*.fits ' + self.contimagedir + '/I' + str(image).zfill(2) + '.fits')
+    if os.path.isfile(self.contimagedir + '/I00.fits'):
+        if self.cont_use00:
+            print('Using Beam 00 for mosaicking')
+        else:
+            print('Not using Beam 00 for mosiacking!')
+            os.remove(self.contimagedir + '/I00.fits')
+    else:
+        pass
 
 
 def copy_contbeams(self):
     """
     Find the right beam models in time and frequency for the appropriate beams and copy them over to the working directory
     """
-    # Get the right directory with the minimum difference in time with regard to the observation
-    beamtimes = sorted(glob.glob(self.beamsrcdir + '*'))
-    beamtimes_arr = [float(bt.split('/')[-1][:6]) for bt in beamtimes]
-    bt_array = np.unique(beamtimes_arr)
-    obstime = float(self.obsid[:6])
-    deltat = np.abs(bt_array - obstime)
-    loc_min = np.argmin(deltat)
-    rightbeamdir = beamtimes[loc_min]
+    if self.cont_pbtype == 'drift':
+        # Get the right directory with the minimum difference in time with regard to the observation
+        beamtimes = sorted(glob.glob(self.beamsrcdir + '*'))
+        beamtimes_arr = [float(bt.split('/')[-1][:6]) for bt in beamtimes]
+        bt_array = np.unique(beamtimes_arr)
+        obstime = float(self.obsid[:6])
+        deltat = np.abs(bt_array - obstime)
+        loc_min = np.argmin(deltat)
+        rightbeamdir = beamtimes[loc_min]
 
-    # Get the frequencies of the beam models
-    channs = sorted(glob.glob(os.path.join(rightbeamdir, 'beam_models/chann_[0-9]')))
-    freqs = np.full(len(channs), np.nan)
-    for b, beam in enumerate(channs):
-        hdul = pyfits.open(os.path.join(beam, rightbeamdir.split('/')[-1] + '_00_I_model.fits'))
-        freqs[b] = hdul[0].header['CRVAL3']
-        hdul.close()
+        # Get the frequencies of the beam models
+        channs = sorted(glob.glob(os.path.join(rightbeamdir, 'beam_models/chann_[0-9]')))
+        freqs = np.full(len(channs), np.nan)
+        for b, beam in enumerate(channs):
+            hdul = pyfits.open(os.path.join(beam, rightbeamdir.split('/')[-1] + '_00_I_model.fits'))
+            freqs[b] = hdul[0].header['CRVAL3']
+            hdul.close()
 
-    # Copy the beam models with the right frequency over to the working directory
-    for beam in range(40):
-        if os.path.isfile(self.contimagedir + '/I' + str(beam).zfill(2) + '.fits'):
-            hdulist = pyfits.open(self.contimagedir + '/I' + str(beam).zfill(2) + '.fits')
-            freq = hdulist[0].header['CRVAL3']
-            nchann = np.argmin(np.abs(freqs - freq)) + 1
-            os.system('cp ' + os.path.join(rightbeamdir, 'beam_models/chann_' + str(nchann) + '/') + rightbeamdir.split('/')[-1] + '_' + str(beam).zfill(2) + '_I_model.fits ' + self.contbeamdir + '/B' + str(beam).zfill(2) + '.fits')
+        # Copy the beam models with the right frequency over to the working directory and regrid them to the image size
+        for beam in range(40):
+            if os.path.isfile(self.contimagedir + '/I' + str(beam).zfill(2) + '.fits'):
+                hdulist = pyfits.open(self.contimagedir + '/I' + str(beam).zfill(2) + '.fits')
+                freq = hdulist[0].header['CRVAL3']
+                nchann = np.argmin(np.abs(freqs - freq)) + 1
+                os.system('cp ' + os.path.join(rightbeamdir, 'beam_models/chann_' + str(nchann) + '/') + rightbeamdir.split('/')[-1] + '_' + str(beam).zfill(2) + '_I_model.fits ' + self.contbeamdir + '/B' + str(beam).zfill(2) + '.fits')
+    elif self.cont_pbtype == 'gaussian':
+        for beam in range(40):
+            if os.path.isfile(self.contimagedir + '/I' + str(beam).zfill(2) + '.fits'):
+                # Get the frequency from the image
+                hdu_cont = pyfits.open(self.contimagedir + '/I' + str(beam).zfill(2) + '.fits')
+                freq = hdu_cont[0].header['CRVAL3']
+                # Get the cellsize from the beam images and recalculate it based on the frequency of the image
+                hdu_beam = pyfits.open(self.beamsrcdir + str(beam).zfill(2) + '_gp_avg_orig.fits')
+                hdu_beam_hdr = hdu_beam[0].header
+                hdu_beam_data = hdu_beam[0].data
+                cs1 = hdu_beam_hdr['CDELT1']
+                cs2 = hdu_beam_hdr['CDELT2']
+                new_cs1 = cs1 * (1.36063551903e09 / freq)
+                new_cs2 = cs2 * (1.36063551903e09 / freq)
+                hdu_beam_hdr['CDELT1'] = new_cs1
+                hdu_beam_hdr['CDELT2'] = new_cs2
+                # Write the new not regridded beam to a temporary file
+                pyfits.writeto(self.contbeamdir + '/B' + str(beam).zfill(2) + '.fits', data=hdu_beam_data, header=hdu_beam_hdr, overwrite=True)
+    else:
+        print('Mode ' + str(self.cont_pbtype) + ' is not supported. Exiting script!')
+        sys.exit()
 
 
 def get_contfiles(self):
@@ -135,25 +169,11 @@ def get_contfiles(self):
 
 
 def clean_contmosaic_tmp_data(self):
-    os.system('rm -rf ' + self.contimagedir + '/*_tmp.fits')
-    os.system('rm -rf ' + self.contimagedir + '/*_repr.fits')
-    os.system('rm -rf ' + self.contimagedir + '/*_reconv.fits')
-    os.system('rm -rf ' + self.contimagedir + '/*_pbcorr.fits')
-    os.system('rm -rf ' + self.contimagedir + '/casa*.log')
-
-
-def clean_polmosaic_tmp_data(self, sb):
-    os.system('rm -rf ' + self.polimagedir + '/Q_B[0-9][0-9]_SB' + str(sb).zfill(2) + '_repr.fits')
-    os.system('rm -rf ' + self.polimagedir + '/U_B[0-9][0-9]_SB' + str(sb).zfill(2) + '_repr.fits')
-    os.system('rm -rf ' + self.polimagedir + '/Q_B[0-9][0-9]_SB' + str(sb).zfill(2) + '_reconv.fits')
-    os.system('rm -rf ' + self.polimagedir + '/U_B[0-9][0-9]_SB' + str(sb).zfill(2) + '_reconv.fits')
-    os.system('rm -rf ' + self.polimagedir + '/Q_B[0-9][0-9]_SB' + str(sb).zfill(2) + '_pbcorr.fits')
-    os.system('rm -rf ' + self.polimagedir + '/U_B[0-9][0-9]_SB' + str(sb).zfill(2) + '_pbcorr.fits')
-    os.system('rm -rf ' + self.polimagedir + '/Q_B[0-9][0-9]_SB' + str(sb).zfill(2) + '_mos.fits')
-    os.system('rm -rf ' + self.polimagedir + '/U_B[0-9][0-9]_SB' + str(sb).zfill(2) + '_mos.fits')
-    os.system('rm -rf ' + self.polimagedir + '/PB_B[0-9][0-9]_SB' + str(sb).zfill(2) + '.fits')
-    os.system('rm -rf ' + self.polimagedir + '/PB_B[0-9][0-9]_SB' + str(sb).zfill(2) + '_repr.fits')
-    os.system('rm -rf ' + self.polimagedir + '/casa*.log')
+    os.system('rm -rf ' + self.contimagedir + '/*_reconv_tmp.fits')
+    os.system('rm -rf ' + self.contimagedir + '/*_reconv_tmp_pbcorr.fits')
+    os.system('rm -rf ' + self.contimagedir + '/*_mos.fits')
+    os.system('rm -rf ' + self.contimagedir + '/*_reconv_tmp_uncorr.fits')
+    os.system('rm -rf ' + self.contimagedir + '/*_uncorr.fits')
 
 
 def gen_poldirs(self):
@@ -207,41 +227,74 @@ def copy_polimages(self, veri):
                 ubmaj = get_param(self, 'polarisation_B' + str(b).zfill(2) + '_targetbeams_qu_beamparams')[:, 0, 1][sb]
                 ubmin = get_param(self, 'polarisation_B' + str(b).zfill(2) + '_targetbeams_qu_beamparams')[:, 1, 1][sb]
                 ubpa = get_param(self, 'polarisation_B' + str(b).zfill(2) + '_targetbeams_qu_beamparams')[:, 2, 1][sb]
-                qhdr.update(BMAJ=qbmaj/3600.0, BMIN=qbmin/3600.0, BPA=qbpa)
+                qhdr.update(BMAJ=qbmaj / 3600.0, BMIN=qbmin / 3600.0, BPA=qbpa)
                 uhdr.update(BMAJ=ubmaj / 3600.0, BMIN=ubmin / 3600.0, BPA=ubpa)
                 pyfits.writeto(self.polimagedir + '/Q_B' + str(b).zfill(2) + '_SB' + str(sb).zfill(2) + '.fits', data=qplane, header=qhdr, overwrite=True)
                 pyfits.writeto(self.polimagedir + '/U_B' + str(b).zfill(2) + '_SB' + str(sb).zfill(2) + '.fits', data=uplane, header=uhdr, overwrite=True)
+    qlist = glob.glob(self.polimagedir + '/Q_B00_SB*.fits')
+    ulist = glob.glob(self.polimagedir + '/U_B00_SB*.fits')
+    if len(qlist) == 0 and len(ulist) == 0:
+        pass
+    else:
+        if self.pol_use00:
+            print('Using Beam 00 for polarisation mosaicking!')
+        else:
+            print('Not using Beam 00 for polarisation mosaicking!')
+            for qim in qlist:
+                os.remove(qim)
+            for uim in ulist:
+                os.remove(uim)
 
 
 def copy_polbeams(self):
     """
     Find the right beam models in time and frequency for the appropriate beams and copy them over to the working directory
     """
-    # Get the right directory with the minimum difference in time with regard to the observation
-    beamtimes = sorted(glob.glob(self.beamsrcdir + '*'))
-    beamtimes_arr = [float(bt.split('/')[-1][:6]) for bt in beamtimes]
-    bt_array = np.unique(beamtimes_arr)
-    obstime = float(self.obsid[:6])
-    deltat = np.abs(bt_array - obstime)
-    loc_min = np.argmin(deltat)
-    rightbeamdir = beamtimes[loc_min]
+    if self.pol_pbtype == 'drift':
+        # Get the right directory with the minimum difference in time with regard to the observation
+        beamtimes = sorted(glob.glob(self.beamsrcdir + '*'))
+        beamtimes_arr = [float(bt.split('/')[-1][:6]) for bt in beamtimes]
+        bt_array = np.unique(beamtimes_arr)
+        obstime = float(self.obsid[:6])
+        deltat = np.abs(bt_array - obstime)
+        loc_min = np.argmin(deltat)
+        rightbeamdir = beamtimes[loc_min]
 
-    # Get the frequencies of the beam models
-    channs = sorted(glob.glob(os.path.join(rightbeamdir, 'beam_models/chann_[0-9]')))
-    freqs = np.full(len(channs), np.nan)
-    for b, beam in enumerate(channs):
-        hdul = pyfits.open(os.path.join(beam, rightbeamdir.split('/')[-1] + '_00_I_model.fits'))
-        freqs[b] = hdul[0].header['CRVAL3']
-        hdul.close()
+        # Get the frequencies of the beam models
+        channs = sorted(glob.glob(os.path.join(rightbeamdir, 'beam_models/chann_[0-9]')))
+        freqs = np.full(len(channs), np.nan)
+        for b, beam in enumerate(channs):
+            hdul = pyfits.open(os.path.join(beam, rightbeamdir.split('/')[-1] + '_00_I_model.fits'))
+            freqs[b] = hdul[0].header['CRVAL3']
+            hdul.close()
 
-    # Copy the beam models with the right frequency over to the working directory
-    for b in range(40):
-        for sb in range(24):
-            if os.path.isfile(self.polimagedir + '/Q_B' + str(b).zfill(2) + '_SB' + str(sb).zfill(2) + '.fits'):
-                hdulist = pyfits.open(self.polimagedir + '/Q_B' + str(b).zfill(2) + '_SB' + str(sb).zfill(2) + '.fits')
-                freq = hdulist[0].header['CRVAL3']
-                nchann = np.argmin(np.abs(freqs - freq)) + 1
-                os.system('cp ' + os.path.join(rightbeamdir, 'beam_models/chann_' + str(nchann) + '/') + rightbeamdir.split('/')[-1] + '_' + str(b).zfill(2) + '_I_model.fits ' + self.polbeamdir + '/PB_B' + str(b).zfill(2) + '_SB' + str(sb).zfill(2) + '.fits')
+        # Copy the beam models with the right frequency over to the working directory
+        for b in range(40):
+            for sb in range(24):
+                if os.path.isfile(self.polimagedir + '/Q_B' + str(b).zfill(2) + '_SB' + str(sb).zfill(2) + '.fits'):
+                    hdulist = pyfits.open(self.polimagedir + '/Q_B' + str(b).zfill(2) + '_SB' + str(sb).zfill(2) + '.fits')
+                    freq = hdulist[0].header['CRVAL3']
+                    nchann = np.argmin(np.abs(freqs - freq)) + 1
+                    os.system('cp ' + os.path.join(rightbeamdir, 'beam_models/chann_' + str(nchann) + '/') + rightbeamdir.split('/')[-1] + '_' + str(b).zfill(2) + '_I_model.fits ' + self.polbeamdir + '/PB_B' + str(b).zfill(2) + '_SB' + str(sb).zfill(2) + '.fits')
+    elif self.pol_pbtype == 'gaussian':
+        for b in range(40):
+            for sb in range(24):
+                if os.path.isfile(self.polimagedir + '/Q_B' + str(b).zfill(2) + '_SB' + str(sb).zfill(2) + '.fits'):
+                    # Get the frequency from the image
+                    hdu_pol = pyfits.open(self.polimagedir + '/Q_B' + str(b).zfill(2) + '_SB' + str(sb).zfill(2) + '.fits')
+                    freq = hdu_pol[0].header['CRVAL3']
+                    # Get the cellsize from the beam images and recalculate it based on the frequency of the image
+                    hdu_beam = pyfits.open(self.beamsrcdir + str(b).zfill(2) + '_gp_avg_orig.fits')
+                    hdu_beam_hdr = hdu_beam[0].header
+                    hdu_beam_data = hdu_beam[0].data
+                    cs1 = hdu_beam_hdr['CDELT1']
+                    cs2 = hdu_beam_hdr['CDELT2']
+                    new_cs1 = cs1 * (1.36063551903e09 / freq)
+                    new_cs2 = cs2 * (1.36063551903e09 / freq)
+                    hdu_beam_hdr['CDELT1'] = new_cs1
+                    hdu_beam_hdr['CDELT2'] = new_cs2
+                    # Write the new not regridded beam to a temporary file
+                    pyfits.writeto(self.polbeamdir + '/PB_B' + str(b).zfill(2) + '_SB' + str(sb).zfill(2) + '.fits', data=hdu_beam_data, header=hdu_beam_hdr, overwrite=True)
 
 
 def get_polfiles(self, sb):
@@ -301,7 +354,7 @@ def get_common_psf(self, veri, format='fits'):
             bpaarr[ni] = common.pa / u.deg
     common = Beam.__new__(Beam, major=common.major * 1.01, minor=common.minor * 1.01, pa=common.pa)
     print('Increased final smallest common beam by 1 %')
-    print('The smallest common ' + str(common))
+    print('The final smallest common beam is ' + str(common))
     return common
 
 
@@ -334,3 +387,18 @@ def get_param(self, pmname):
     d = np.load(os.path.join(self.basedir, self.obsid, 'param.npy'), allow_pickle=True, encoding='latin1').item()
     values = d[pmname]
     return values
+
+
+def clean_polmosaic_tmp_data(self):
+    os.system('rm -rf ' + self.polimagedir + '/*_reconv_tmp.fits')
+    os.system('rm -rf ' + self.polimagedir + '/*_reconv_tmp_pbcorr.fits')
+    os.system('rm -rf ' + self.polimagedir + '/*_mos.fits')
+    os.system('rm -rf ' + self.polimagedir + '/*_reconv_tmp_uncorr.fits')
+    os.system('rm -rf ' + self.polimagedir + '/*_uncorr.fits')
+
+
+def make_tmp_copy(fname):
+    base, ext = os.path.splitext(fname)
+    tempname = os.path.basename(fname.replace(ext, '_tmp{}'.format(ext)))
+    subprocess.call('cp {} {}'.format(fname, tempname), shell=True)
+    return tempname

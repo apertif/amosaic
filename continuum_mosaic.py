@@ -41,79 +41,81 @@ class continuum_mosaic:
         utils.copy_contbeams(self)
 
 
-    def make_contmosaic(self, images, pbimages, reference=None, pbclip=None):
+    def make_contmosaic(self, images, pbimages, reference=None, rmnoise=False):
         """
         Function to generate the continuum mosaic
         """
-
         # Get the common psf
         common_psf = utils.get_common_psf(self, images)
+        print('Clipping primary beam response at the %f level', str(self.cont_pbclip))
 
         corrimages = [] # to mosaic
+        uncorrimages = []
         pbweights = [] # of the pixels
-        rmsweights = [] # of the images themself
         freqs = []
         # weight_images = []
         for img, pb in zip(images, pbimages):
+            print('Doing primary beam correction for Beam ' + str(img.split('/')[-1].replace('.fits','').lstrip('I')))
             # prepare the images (squeeze, transfer_coordinates, reproject, regrid pbeam, correct...)
             with pyfits.open(img) as f:
                 imheader = f[0].header
                 freqs.append(imheader['CRVAl3'])
                 tg = imheader['OBJECT']
-            img = fm.fits_squeeze(img) # remove extra dimentions
-            pb = fm.fits_transfer_coordinates(img, pb) # transfer_coordinates
-            pb = fm.fits_squeeze(pb) # remove extra dimensions
-            with pyfits.open(img) as f:
-                imheader = f[0].header
-                imdata = f[0].data
-            with pyfits.open(pb) as f:
-                pbhdu = f[0]
-                autoclip = np.nanmin(f[0].data)
-        # reproject
-                reproj_arr, reproj_footprint = reproject_interp(pbhdu, imheader)
-
-            pbclip = self.cont_pbclip or autoclip
-            print('PB is clipped at %f level', pbclip)
-            reproj_arr = np.float32(reproj_arr)
-            reproj_arr[reproj_arr < pbclip] = np.nan
-            pb_regr_repr = os.path.basename(pb.replace('.fits', '_repr.fits'))
-            pyfits.writeto(pb_regr_repr, reproj_arr, imheader, overwrite=True)
         # convolution with common psf
-            reconvolved_image = os.path.basename(img.replace('.fits', '_reconv.fits'))
+            reconvolved_image = img.replace('.fits', '_reconv_tmp.fits')
             reconvolved_image = fm.fits_reconvolve_psf(img, common_psf, out=reconvolved_image)
         # PB correction
-            pbcorr_image = os.path.basename(reconvolved_image.replace('.fits', '_pbcorr.fits'))
-            pbcorr_image = fm.fits_operation(reconvolved_image, reproj_arr, operation='/', out=pbcorr_image)
+            pbcorr_image = reconvolved_image.replace('.fits', '_pbcorr_tmp.fits')
+            tmpimg = utils.make_tmp_copy(reconvolved_image)
+            tmppb = utils.make_tmp_copy(pb)
+            tmpimg = fm.fits_squeeze(tmpimg)  # remove extra dimentions
+            tmppb = fm.fits_transfer_coordinates(tmpimg, tmppb)  # transfer_coordinates
+            tmppb = fm.fits_squeeze(tmppb)  # remove extra dimentions
+            with pyfits.open(tmpimg) as f:
+                imheader = f[0].header
+            with pyfits.open(tmppb) as f:
+                pbhdu = f[0]
+                pbheader = f[0].header
+                pbarray = f[0].data
+                if (imheader['CRVAL1'] != pbheader['CRVAL1']) or (imheader['CRVAL2'] != pbheader['CRVAL2']) or (imheader['CDELT1'] != pbheader['CDELT1']) or (imheader['CDELT2'] != pbheader['CDELT2']):
+                    pbarray, reproj_footprint = reproject_interp(pbhdu, imheader)
+                else:
+                    pass
+            pbarray = np.float32(pbarray)
+            pbarray[pbarray < self.cont_pbclip] = np.nan
+            pb_regr_repr = tmppb.replace('_tmp.fits', '_repr_tmp.fits')
+            pyfits.writeto(pb_regr_repr, pbarray, imheader, overwrite=True)
+            img_corr = reconvolved_image.replace('.fits', '_pbcorr.fits')
+            img_uncorr = reconvolved_image.replace('.fits', '_uncorr.fits')
+
+            img_corr = fm.fits_operation(tmpimg, pbarray, operation='/', out=img_corr)
+            img_uncorr = fm.fits_operation(img_corr, pbarray, operation='*', out=img_uncorr)
         # cropping
-            cropped_image = os.path.basename(img.replace('.fits', '_mos.fits'))
-            cropped_image, cutout = fm.fits_crop(pbcorr_image, out=cropped_image)
+            cropped_image = img.replace('.fits', '_mos.fits')
+            cropped_image, cutout = fm.fits_crop(img_corr, out=cropped_image)
+
+            uncorr_cropped_image = img.replace('.fits', '_uncorr.fits')
+            uncorr_cropped_image, _ = fm.fits_crop(img_uncorr, out=uncorr_cropped_image)
+
             corrimages.append(cropped_image)
+            uncorrimages.append(uncorr_cropped_image)
 
         # primary beam weights
-            wg_arr = reproj_arr - pbclip # the edges weight ~0
-            wg_arr[np.isnan(wg_arr)] = 0 # the NaNs weight 0
-            wg_arr = wg_arr / np.nanmax(wg_arr) # normalize
+            wg_arr = pbarray  #
+            wg_arr[np.isnan(wg_arr)] = 0  # the NaNs weight 0
+            wg_arr = wg_arr ** 2 / np.nanmax(wg_arr ** 2)  # normalize
             wcut = Cutout2D(wg_arr, cutout.input_position_original, cutout.shape)
             pbweights.append(wcut.data)
 
-        # weight the images by RMS noise over the edges
-            l, m = imdata.shape[0]//10,  imdata.shape[1]//10
-            mask = np.ones(imdata.shape, dtype=np.bool)
-            mask[l:-l,m:-m] = False
-            img_noise = np.nanstd(imdata[mask])
-            img_weight = 1 / img_noise**2
-            rmsweights.append(img_weight)
-
-        # merge the image rms weights and the primary beam pixel weights:
-        weights = [p*r/max(rmsweights) for p, r in zip(pbweights, rmsweights)]
-
         # create the wcs and footprint for output mosaic
+        print('Generating primary beam corrected and uncorrected continuum mosaic.')
         wcs_out, shape_out = find_optimal_celestial_wcs(corrimages, auto_rotate=False, reference=reference)
 
-        array, footprint = reproject_and_coadd(corrimages, wcs_out, shape_out=shape_out,
-                                                reproject_function=reproject_interp,
-                                                input_weights=weights)
+        array, footprint = reproject_and_coadd(corrimages, wcs_out, shape_out=shape_out, reproject_function=reproject_interp, input_weights=pbweights)
+        array2, _ = reproject_and_coadd(uncorrimages, wcs_out, shape_out=shape_out, reproject_function=reproject_interp, input_weights=pbweights)
+
         array = np.float32(array)
+        array2 = np.float32(array2)
 
         # insert common PSF into the header
         psf = common_psf.to_header_keywords()
@@ -123,7 +125,10 @@ class continuum_mosaic:
         hdr.insert('RADESYS', ('BMIN', psf['BMIN']))
         hdr.insert('RADESYS', ('BPA', psf['BPA']))
 
-        pyfits.writeto(self.contmosaicdir + '/' + str(tg).upper() + '.fits', data=array,
-                     header=hdr, overwrite=True)
+        # insert units to header:
+        hdr.insert('RADESYS', ('BUNIT', 'JY/BEAM'))
+
+        pyfits.writeto(self.contmosaicdir + '/' + str(tg).upper() + '.fits', data=array, header=hdr, overwrite=True)
+        pyfits.writeto(self.contmosaicdir + '/' + str(tg).upper() + '_uncorr.fits', data=array2, header=hdr, overwrite=True)
 
         utils.clean_contmosaic_tmp_data(self)
