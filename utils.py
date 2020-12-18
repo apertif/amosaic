@@ -399,6 +399,6 @@ def clean_polmosaic_tmp_data(self):
 
 def make_tmp_copy(fname):
     base, ext = os.path.splitext(fname)
-    tempname = os.path.basename(fname.replace(ext, '_tmp{}'.format(ext)))
+    tempname = fname.replace(ext, '_tmp{}'.format(ext))
     subprocess.call('cp {} {}'.format(fname, tempname), shell=True)
     return tempname
