@@ -35,7 +35,7 @@ class polarisation_mosaic:
         utils.copy_polimages(self, veri)
         utils.copy_polbeams(self)
         cbeam = utils.get_common_psf(self, veri, format='array')
-        for sb in range(24):
+        for sb in range(self.pol_start_sb, self.pol_end_sb + 1):
            qimages, uimages, pbimages = utils.get_polfiles(self, sb)
            if len(qimages) != 0:
                self.make_polmosaic(qimages, uimages, pbimages, sb, cbeam, pbclip=self.pol_pbclip)
@@ -49,10 +49,10 @@ class polarisation_mosaic:
         Sort out any beams or planes, which are useless for the imaging
         """
         # Collect the beam and noise parameters from the main parameter file
-        rms_array = np.full((40, 24, 2), np.nan)
-        bmaj_array = np.full((40, 24, 2), np.nan)
-        bmin_array = np.full((40, 24, 2), np.nan)
-        bpa_array = np.full((40, 24, 2), np.nan)
+        rms_array = np.full((40, self.pol_end_sb + 1 - self.pol_start_sb, 2), np.nan)
+        bmaj_array = np.full((40, self.pol_end_sb + 1 - self.pol_start_sb, 2), np.nan)
+        bmin_array = np.full((40, self.pol_end_sb + 1 - self.pol_start_sb, 2), np.nan)
+        bpa_array = np.full((40, self.pol_end_sb + 1 - self.pol_start_sb, 2), np.nan)
         for beam in range(0, 40, 1):
             try:
                 rms_array[beam, :] = utils.get_param(self, 'polarisation_B' + str(beam).zfill(2) + '_targetbeams_qu_imagestats')[:, 2, :]
@@ -70,28 +70,28 @@ class polarisation_mosaic:
         np.savetxt(self.polmosaicdir + '/Ubmin.npy', bmin_array[:,:,1])
         np.savetxt(self.polmosaicdir + '/Ubpa.npy', bpa_array[:,:,1])
         # Create an array for the accepted beams
-        accept_array = np.full((40, 24), True)
+        accept_array = np.full((40, self.pol_end_sb + 1 - self.pol_start_sb), True)
         # Iterate through the rms and beam sizes of all cubes and filter the images
         for b in range(40):
-            for sb in range(24):
+            for sb in range(self.pol_start_sb, self.pol_end_sb + 1):
                 if rms_array[b, sb, 0] > self.pol_rmsclip or np.isnan(rms_array[b, sb, 0]):
                     accept_array[b, sb] = False
                 else:
                     continue
 
-            for sb in range(24):
+            for sb in range(self.pol_start_sb, self.pol_end_sb + 1):
                 if rms_array[b, sb, 1] > self.pol_rmsclip or np.isnan(rms_array[b, sb, 1]):
                     accept_array[b, sb] = False
                 else:
                     continue
 
-            for sb in range(24):
+            for sb in range(self.pol_start_sb, self.pol_end_sb + 1):
                 if bmin_array[b, sb, 0] > self.pol_bmin or bmin_array[b, sb, 1] > self.pol_bmin:
                     accept_array[b, sb] = False
                 else:
                     continue
 
-            for sb in range(24):
+            for sb in range(self.pol_start_sb, self.pol_end_sb + 1):
                 if bmaj_array[b, sb, 0] > self.pol_bmaj or bmaj_array[b, sb, 1] > self.pol_bmaj:
                     accept_array[b, sb] = False
                 else:
@@ -111,14 +111,14 @@ class polarisation_mosaic:
         np.savetxt(self.polmosaicdir + '/badim.npy', badim_array)
         np.savetxt(self.polmosaicdir + '/bacc.npy', bacc_array)
         # Generate the array for accepting the subbands
-        sb_acc = np.full(24, True, dtype=bool)
-        for sb in range(24):
+        sb_acc = np.full(self.pol_end_sb + 1 - self.pol_start_sb, True, dtype=bool)
+        for sb in range(self.pol_start_sb, self.pol_end_sb + 1):
             if np.sum(accept_array[:, sb]) < np.sum(bacc_array):
                 sb_acc[sb] = False
         np.savetxt(self.polmosaicdir + '/sbacc.npy', sb_acc)
-        final_acc_arr = np.full((40, 24), True)
+        final_acc_arr = np.full((40, self.pol_end_sb + 1 - self.pol_start_sb), True)
         for b in range(40):
-            for sb in range(24):
+            for sb in range(self.pol_start_sb, self.pol_end_sb + 1):
                 if bacc_array[b] and sb_acc[sb]:
                     final_acc_arr[b,sb] = True
                 else:

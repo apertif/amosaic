@@ -206,7 +206,7 @@ def copy_polimages(self, veri):
     Function to copy the polarisation images of a specific subband to the working directory
     """
     for b in range(40):
-        for sb in range(24):
+        for sb in range(self.pol_start_sb, self.pol_end_sb + 1):
             if veri[b, sb]:
                 qcube = pyfits.open(os.path.join(self.basedir, self.obsid, str(b).zfill(2), 'polarisation/Qcube.fits'))
                 ucube = pyfits.open(os.path.join(self.basedir, self.obsid, str(b).zfill(2), 'polarisation/Ucube.fits'))
@@ -270,7 +270,7 @@ def copy_polbeams(self):
 
         # Copy the beam models with the right frequency over to the working directory
         for b in range(40):
-            for sb in range(24):
+            for sb in range(self.pol_start_sb, self.pol_end_sb + 1):
                 if os.path.isfile(self.polimagedir + '/Q_B' + str(b).zfill(2) + '_SB' + str(sb).zfill(2) + '.fits'):
                     hdulist = pyfits.open(self.polimagedir + '/Q_B' + str(b).zfill(2) + '_SB' + str(sb).zfill(2) + '.fits')
                     freq = hdulist[0].header['CRVAL3']
@@ -278,7 +278,7 @@ def copy_polbeams(self):
                     os.system('cp ' + os.path.join(rightbeamdir, 'beam_models/chann_' + str(nchann) + '/') + rightbeamdir.split('/')[-1] + '_' + str(b).zfill(2) + '_I_model.fits ' + self.polbeamdir + '/PB_B' + str(b).zfill(2) + '_SB' + str(sb).zfill(2) + '.fits')
     elif self.pol_pbtype == 'gaussian':
         for b in range(40):
-            for sb in range(24):
+            for sb in range(self.pol_start_sb, self.pol_end_sb + 1):
                 if os.path.isfile(self.polimagedir + '/Q_B' + str(b).zfill(2) + '_SB' + str(sb).zfill(2) + '.fits'):
                     # Get the frequency from the image
                     hdu_pol = pyfits.open(self.polimagedir + '/Q_B' + str(b).zfill(2) + '_SB' + str(sb).zfill(2) + '.fits')
@@ -337,7 +337,7 @@ def get_common_psf(self, veri, format='fits'):
         bmines = np.empty(0)
         bpas = np.empty(0)
         for b in range(40):
-            for sb in range(24):
+            for sb in range(self.pol_start_sb, self.pol_end_sb + 1):
                 if veri[b,sb]:
                     bmajes = np.append(bmajes, (get_param(self, 'polarisation_B' + str(b).zfill(2) + '_targetbeams_qu_beamparams')[:, 0, 0][sb]))
                     bmines = np.append(bmines, (get_param(self, 'polarisation_B' + str(b).zfill(2) + '_targetbeams_qu_beamparams')[:, 1, 0][sb]))
