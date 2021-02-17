@@ -13,6 +13,8 @@ from astropy.io import ascii
 from astropy.io import fits as pyfits
 from radio_beam import Beam, Beams, commonbeam
 
+import fits_magic as fm
+
 
 def load_config(config_object, file_=None):
     """
@@ -93,13 +95,28 @@ def copy_contimages(self):
             print('No continuum quality assurance available for observation id ' + str(self.obsid) + '. Copying all available images.')
             for image in range(40):
                 os.system('cp ' + os.path.join(self.basedir, self.obsid) + '/' + str(image).zfill(2) + '/continuum/image_mf_*.fits ' + self.contimagedir + '/I' + str(image).zfill(2) + '.fits')
+    elif self.cont_mode == 'param':
+        # Copy all images fullfilling the criteria given for the continuum mosaic
+        print('Copying all images with a synthesised beam with a maximum size of bmaj=' +  str(self.cont_bmaj) + ' and bmin=' + str(self.cont_bmin) + ' and a maximum image rms of ' + str(self.cont_rms))
+        for image in range(40):
+            os.system('cp ' + os.path.join(self.basedir, self.obsid) + '/' + str(image).zfill(2) + '/continuum/image_mf_*.fits ' + self.contimagedir + '/I' + str(image).zfill(2) + '.fits')
+            if os.path.isfile(self.contimagedir + '/I' + str(image).zfill(2) + '.fits'):
+                bmaj, bmin = fm.get_beam(self.contimagedir + '/I' + str(image).zfill(2) + '.fits')
+                rms = fm.get_rms(self.contimagedir + '/I' + str(image).zfill(2) + '.fits')
+                if (bmaj*3600.0 > self.cont_bamj) or (bmin*3600.0 > self.cont_bmin) or (rms > self.cont_rmsclip):
+                    print('Total power image of Beam ' + str(image).zfill(2) + ' exceeds the specified parameters and is not used!')
+                    os.remove(self.contimagedir + '/I' + str(image).zfill(2) + '.fits')
+                else:
+                    pass
+            else:
+                print('Image for Beam ' + str(image).zfill(2) + ' is not available!')
     elif (type(self.cont_mode) == list):
         # Copy only the beams given as a list
         for image in self.cont_mode:
             os.system('cp ' + os.path.join(self.basedir, self.obsid) + '/' + str(image).zfill(2) + '/continuum/image_mf_*.fits ' + self.contimagedir + '/I' + str(image).zfill(2) + '.fits')
     if os.path.isfile(self.contimagedir + '/I00.fits'):
         if self.cont_use00:
-            print('Using Beam 00 for mosaicking')
+            print('Using Beam 00 for mosaicking!')
         else:
             print('Not using Beam 00 for mosiacking!')
             os.remove(self.contimagedir + '/I00.fits')

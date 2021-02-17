@@ -175,3 +175,18 @@ def fits_crop(fitsfile, out=None):
 # Write the cutout to a new FITS file
         hdu.writeto(out, overwrite=True)
     return out, cutout
+
+
+def get_beam(fitsfile):
+    with pyfits.open(fitsfile) as hdu:
+        hdu_header = hdu[0].header
+        bmaj = hdu_header['BMAJ']
+        bmin = hdu_header['BMIN']
+    return bmaj, bmin
+
+
+def get_rms(fitsfile):
+    with pyfits.open(fitsfile) as hdu:
+        data = hdu[0].data
+        rms = np.std(data)
+    return rms
